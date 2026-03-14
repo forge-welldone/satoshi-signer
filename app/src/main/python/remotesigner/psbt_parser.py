@@ -1,0 +1,164 @@
+"""Parse PSBT files and extract transaction details for display."""
+
+from dataclasses import dataclass, field
+from embit.psbt import PSBT
+from embit.networks import NETWORKS
+
+
+PSBT_MAGIC = b"psbt\xff"
+
+
+@dataclass
+class ParsedTransaction:
+    inputs: list = field(default_factory=list)
+    outputs: list = field(default_factory=list)
+    fee: int = 0
+    status: str = "unsigned"
+    signers: list = field(default_factory=list)
+    raw_psbt: object = None
+
+
+def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
+    """Parse PSBT bytes and return structured transaction data as a dict.
+
+    Args:
+        psbt_bytes: Raw PSBT binary data.
+        network: "main" or "test".
+
+    Returns:
+        Dict with inputs, outputs, fee, status, signers.
+
+    Raises:
+        ValueError: If the bytes are not a valid PSBT.
+    """
+    if not psbt_bytes.startswith(PSBT_MAGIC):
+        raise ValueError("Invalid PSBT: missing magic bytes")
+
+    try:
+        psbt = PSBT.parse(psbt_bytes)
+    except Exception as e:
+        raise ValueError(f"Invalid PSBT: {e}") from e
+
+    net = NETWORKS[network]
+    result = ParsedTransaction(raw_psbt=psbt)
+
+    # Collect all master fingerprints from inputs (to identify change outputs)
+    input_fingerprints = set()
+    for inp_scope in psbt.inputs:
+        for pub, deriv in inp_scope.bip32_derivations.items():
+            input_fingerprints.add(deriv.fingerprint)
+        for pub, (leaf_hashes, deriv) in inp_scope.taproot_bip32_derivations.items():
+            input_fingerprints.add(deriv.fingerprint)
+
+    # Parse inputs
+    for i, inp_scope in enumerate(psbt.inputs):
+        # inp_scope.utxo is a property that returns witness_utxo or from non_witness_utxo
+        utxo = inp_scope.utxo
+        inp_data = {
+            "index": i,
+            "txid": inp_scope.txid.hex() if inp_scope.txid else "",
+            "vout": inp_scope.vout if inp_scope.vout is not None else 0,
+            "amount": utxo.value if utxo else 0,
+        }
+        result.inputs.append(inp_data)
+
+    # Parse outputs and detect change
+    for i, out_scope in enumerate(psbt.outputs):
+        # OutputScope has .script_pubkey and .value directly
+        script_pubkey = out_scope.script_pubkey
+        try:
+            address = script_pubkey.address(net) if script_pubkey else "unknown"
+        except (ValueError, Exception):
+            address = "unknown"
+
+        is_change = _is_change_output(out_scope, input_fingerprints)
+
+        out_data = {
+            "index": i,
+            "address": address,
+            "amount": out_scope.value if out_scope.value is not None else 0,
+            "is_change": is_change,
+        }
+        result.outputs.append(out_data)
+
+    # Fee: psbt.fee() sums utxo values minus output values
+    try:
+        result.fee = psbt.fee()
+    except Exception:
+        result.fee = -1
+
+    # Signing status
+    result.status, result.signers = _analyze_signing_status(psbt)
+
+    return {
+        "inputs": result.inputs,
+        "outputs": result.outputs,
+        "fee": result.fee,
+        "status": result.status,
+        "signers": result.signers,
+    }
+
+
+def _is_change_output(out_scope, input_fingerprints: set) -> bool:
+    """Detect if an output is a change output.
+
+    An output is considered change if:
+    - It has a bip32 derivation whose fingerprint matches one of the input fingerprints
+    - AND the second-to-last path component is 1 (internal/change chain)
+    """
+    for pub, deriv in out_scope.bip32_derivations.items():
+        if deriv.fingerprint in input_fingerprints:
+            path = deriv.derivation
+            if len(path) >= 2 and path[-2] == 1:
+                return True
+
+    for pub, (leaf_hashes, deriv) in out_scope.taproot_bip32_derivations.items():
+        if deriv.fingerprint in input_fingerprints:
+            path = deriv.derivation
+            if len(path) >= 2 and path[-2] == 1:
+                return True
+
+    return False
+
+
+def _analyze_signing_status(psbt: PSBT) -> tuple:
+    """Determine signing status and list signers.
+
+    Returns a tuple of (status_str, signers_list).
+    Status is one of: "unsigned", "partially_signed", "fully_signed".
+    Each signer is {"fingerprint": hex_str, "signed": bool}.
+    """
+    all_fingerprints: dict = {}
+
+    for inp_scope in psbt.inputs:
+        signed_pubs = set(inp_scope.partial_sigs.keys()) if inp_scope.partial_sigs else set()
+        # taproot_sigs is a dict keyed by (pub, leaf_hash) tuples
+        has_tap_sig = bool(inp_scope.taproot_sigs) if inp_scope.taproot_sigs else False
+
+        for pub, deriv in inp_scope.bip32_derivations.items():
+            # fingerprint is bytes; convert to hex for display
+            fp = deriv.fingerprint.hex()
+            if fp not in all_fingerprints:
+                all_fingerprints[fp] = {"fingerprint": fp, "signed": False}
+            if pub in signed_pubs:
+                all_fingerprints[fp]["signed"] = True
+
+        for pub, (leaf_hashes, deriv) in inp_scope.taproot_bip32_derivations.items():
+            fp = deriv.fingerprint.hex()
+            if fp not in all_fingerprints:
+                all_fingerprints[fp] = {"fingerprint": fp, "signed": False}
+            if has_tap_sig:
+                all_fingerprints[fp]["signed"] = True
+
+    signers = list(all_fingerprints.values())
+
+    if not signers:
+        status = "unsigned"
+    elif all(s["signed"] for s in signers):
+        status = "fully_signed"
+    elif any(s["signed"] for s in signers):
+        status = "partially_signed"
+    else:
+        status = "unsigned"
+
+    return status, signers

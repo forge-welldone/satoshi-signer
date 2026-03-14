@@ -1,0 +1,5 @@
+trezor==0.13.9
+embit>=0.7
+requests>=2.28
+pytest>=7.0
+pytest-mock>=3.10
