@@ -1,0 +1,10 @@
+.gradle/
+build/
+app/build/
+*.apk
+local.properties
+.idea/
+*.iml
+.venv/
+__pycache__/
+*.pyc
