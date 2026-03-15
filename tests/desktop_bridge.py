@@ -111,3 +111,39 @@ class RecordingBridge:
         cassette = self.get_cassette(**kwargs)
         with open(path, "w") as f:
             json.dump(cassette, f, indent=2)
+
+
+class DesktopUsbBridge:
+    """USB bridge using trezorlib's HidHandle for desktop testing.
+
+    Wraps trezorlib's tested HID handling (wirelink filtering, HID version
+    probing, nonblocking read polling) and exposes the same interface as
+    Kotlin's UsbBridge.
+    """
+
+    def __init__(self) -> None:
+        self._handle = None
+
+    def open(self) -> None:
+        from trezorlib.transport.hid import HidTransport
+        from trezorlib.models import TREZORS
+
+        devices = list(HidTransport.enumerate(models=TREZORS))
+        if not devices:
+            raise RuntimeError(
+                "No Trezor found. Is the device plugged in and unlocked?"
+            )
+        # Use the first device's handle directly
+        self._handle = devices[0].handle
+        self._handle.open()
+
+    def close(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+
+    def writeChunk(self, data: bytes) -> None:
+        self._handle.write_chunk(data)
+
+    def readChunk(self) -> bytes:
+        return self._handle.read_chunk()

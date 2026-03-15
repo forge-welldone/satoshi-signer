@@ -267,3 +267,31 @@ class TestRecordingBridge:
         playback.writeChunk(write_data)
         assert playback.readChunk() == read_data
         playback.close()
+
+
+# ---------------------------------------------------------------------------
+# DesktopUsbBridge tests (interface only — hardware tests are manual)
+# ---------------------------------------------------------------------------
+
+class TestDesktopUsbBridge:
+    def test_has_bridge_interface(self):
+        from desktop_bridge import DesktopUsbBridge
+
+        bridge = DesktopUsbBridge()
+        assert callable(bridge.open)
+        assert callable(bridge.close)
+        assert callable(bridge.writeChunk)
+        assert callable(bridge.readChunk)
+
+    def test_open_without_trezor_raises(self):
+        """On a machine without a Trezor plugged in, open() should raise."""
+        from desktop_bridge import DesktopUsbBridge
+
+        bridge = DesktopUsbBridge()
+        try:
+            bridge.open()
+            # Trezor is connected — skip this test
+            bridge.close()
+            pytest.skip("Trezor is connected, cannot test no-device error")
+        except RuntimeError as e:
+            assert "No Trezor" in str(e)
