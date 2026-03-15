@@ -32,7 +32,7 @@ def load_cassette(name: str) -> dict:
 
 @pytest.mark.skipif(
     not has_cassette("single-sig-p2wpkh"),
-    reason="Cassette not recorded yet. Run: python tests/sign_cli.py sign <psbt> --record tests/cassettes/single-sig-p2wpkh.json",
+    reason="Cassette not recorded. Run: python tests/sign_cli.py sign <psbt> --record tests/cassettes/single-sig-p2wpkh.json",
 )
 class TestSingleSigP2wpkh:
     """E2E signing test for a single-sig P2WPKH transaction."""
@@ -57,7 +57,7 @@ class TestSingleSigP2wpkh:
         network = cassette["metadata"].get("network", "main")
         result = sign_psbt(psbt_bytes, bridge, network=network)
 
-        assert result["status"] == "signed"
+        assert result["status"] in ("complete", "partial")
         assert "psbt" in result
         signed_bytes = base64.b64decode(result["psbt"])
         assert signed_bytes.startswith(b"psbt\xff")
@@ -75,8 +75,74 @@ class TestSingleSigP2wpkh:
         network = cassette["metadata"].get("network", "main")
         result = sign_psbt(psbt_bytes, bridge, network=network)
 
-        assert result["status"] == "signed"
+        assert result["status"] in ("complete", "partial")
         signed_psbt = PSBT.parse(base64.b64decode(result["psbt"]))
         for inp in signed_psbt.inputs:
             assert len(inp.partial_sigs) > 0 or inp.unknown.get(b"\x13")
+        bridge.assert_consumed()
+
+
+@pytest.mark.skipif(
+    not has_cassette("multisig-testnet3"),
+    reason="Cassette not recorded. Run: python tests/sign_cli.py --network test sign tests/psbts/multisig_testnet3.psbt --record tests/cassettes/multisig-testnet3.json",
+)
+class TestMultisigTestnet3:
+    """E2E signing test for a multisig testnet transaction."""
+
+    @pytest.fixture
+    def cassette(self):
+        return load_cassette("multisig-testnet3")
+
+    @pytest.fixture
+    def bridge(self, cassette):
+        from desktop_bridge import PlaybackBridge
+
+        return PlaybackBridge(cassette)
+
+    def test_sign_returns_signed_psbt(self, bridge, cassette):
+        """sign_psbt() produces a signed PSBT from the recorded exchange."""
+        psbt_b64 = cassette["metadata"].get("input_psbt_b64")
+        if not psbt_b64:
+            pytest.skip("Cassette missing input_psbt_b64 in metadata")
+
+        psbt_bytes = base64.b64decode(psbt_b64)
+        network = cassette["metadata"].get("network", "main")
+        result = sign_psbt(psbt_bytes, bridge, network=network)
+
+        assert result["status"] in ("complete", "partial")
+        assert "psbt" in result
+        signed_bytes = base64.b64decode(result["psbt"])
+        assert signed_bytes.startswith(b"psbt\xff")
+        bridge.assert_consumed()
+
+    def test_sign_inserts_signatures(self, bridge, cassette):
+        """Signed PSBT has partial_sigs populated."""
+        from embit.psbt import PSBT
+
+        psbt_b64 = cassette["metadata"].get("input_psbt_b64")
+        if not psbt_b64:
+            pytest.skip("Cassette missing input_psbt_b64 in metadata")
+
+        psbt_bytes = base64.b64decode(psbt_b64)
+        network = cassette["metadata"].get("network", "main")
+        result = sign_psbt(psbt_bytes, bridge, network=network)
+
+        assert result["status"] in ("complete", "partial")
+        signed_psbt = PSBT.parse(base64.b64decode(result["psbt"]))
+        for inp in signed_psbt.inputs:
+            assert len(inp.partial_sigs) > 0 or inp.unknown.get(b"\x13")
+        bridge.assert_consumed()
+
+    def test_produces_complete_transaction(self, bridge, cassette):
+        """Multisig signing with all keys produces a complete raw transaction."""
+        psbt_b64 = cassette["metadata"].get("input_psbt_b64")
+        if not psbt_b64:
+            pytest.skip("Cassette missing input_psbt_b64 in metadata")
+
+        psbt_bytes = base64.b64decode(psbt_b64)
+        network = cassette["metadata"].get("network", "main")
+        result = sign_psbt(psbt_bytes, bridge, network=network)
+
+        assert result["status"] == "complete"
+        assert "raw_tx" in result
         bridge.assert_consumed()

@@ -153,8 +153,14 @@ def cmd_sign(args):
     if args.record:
         print(f"Recording USB exchanges to {args.record}")
 
+    # Open the bridge before signing (mirrors Android ViewModel lifecycle).
+    # AndroidTransport.open() is a no-op, so we open the bridge directly.
+    bridge.open()
     callback = PrintStatusCallback()
-    result = sign_psbt(psbt_bytes, bridge, status_callback=callback, network=args.network)
+    try:
+        result = sign_psbt(psbt_bytes, bridge, status_callback=callback, network=args.network)
+    finally:
+        bridge.close()
 
     if result["status"] in ("complete", "partial"):
         print(f"\nSigning successful! (status: {result['status']})")

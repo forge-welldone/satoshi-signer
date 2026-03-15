@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerInfo
+import com.remotesigner.viewmodel.TxInput
 import com.remotesigner.viewmodel.TxOutput
 
 @Composable
@@ -38,7 +39,14 @@ fun TransactionReviewScreen(
                 }
             }
 
-            Text("Sending:", style = MaterialTheme.typography.titleMedium)
+            Text("From:", style = MaterialTheme.typography.titleMedium)
+            state.inputs.forEach { inp ->
+                InputRow(inp)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text("To:", style = MaterialTheme.typography.titleMedium)
             state.outputs.filter { !it.isChange }.forEach { out ->
                 OutputRow(out, prefix = "\u2192")
             }
@@ -70,6 +78,13 @@ fun TransactionReviewScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text("Status: ${state.status.replace('_', ' ')}", style = MaterialTheme.typography.titleMedium)
+            if (state.requiredSigs > 0) {
+                val signed = state.signers.count { it.signed }
+                Text(
+                    "Signatures: $signed of ${state.requiredSigs} required (${state.totalSigs} cosigners)",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             if (state.signers.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 state.signers.forEach { signer ->
@@ -87,6 +102,21 @@ fun TransactionReviewScreen(
                 Text("Cancel")
             }
         }
+    }
+}
+
+@Composable
+private fun InputRow(input: TxInput) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            "\u2190 ${shortenAddress(input.address)}",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(formatBtc(input.amount), style = MaterialTheme.typography.bodyMedium)
     }
 }
 

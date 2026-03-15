@@ -158,11 +158,18 @@ def _parse_multisig_script(
     script: bytes,
     bip32_derivations: dict,
     psbt: PSBT,
+    partial_sigs: Optional[dict] = None,
 ) -> Optional[MultisigRedeemScriptType]:
     """Parse a multisig script and return a ``MultisigRedeemScriptType``.
 
     Only supports standard OP_CHECKMULTISIG scripts of the form:
         OP_m <pub1> <pub2> ... <pubN> OP_n OP_CHECKMULTISIG
+
+    Parameters
+    ----------
+    partial_sigs:
+        Existing partial signatures from the PSBT input scope.
+        Used to populate the signatures array for partially signed PSBTs.
 
     Returns ``None`` if the script is not a recognizable multisig.
     """
@@ -198,50 +205,33 @@ def _parse_multisig_script(
     if len(pubkeys_raw) != n:
         return None
 
-    # Build HDNodePathType entries for each pubkey
+    # Build HDNodePathType entries for each pubkey.
+    # We use address_n=[] (empty) so the Trezor uses public_key directly
+    # for matching, without attempting derivation (which would require a
+    # real chain_code we don't have).
     hd_nodes: List[HDNodePathType] = []
     for raw_pub in pubkeys_raw:
-        # Look up derivation info
-        deriv_info = None
-        for pub, d in bip32_derivations.items():
-            if pub.sec() == raw_pub:
-                deriv_info = d
-                break
+        node = HDNodeType(
+            depth=0,
+            fingerprint=0,
+            child_num=0,
+            chain_code=b"\x00" * 32,
+            public_key=raw_pub,
+        )
+        hd_nodes.append(HDNodePathType(node=node, address_n=[]))
 
-        if deriv_info is not None:
-            # Split derivation into parent path and child suffix.
-            # Convention: first N-2 elements are the xpub path, last 2 are
-            # the change/index components.
-            full_path = list(deriv_info.derivation)
-            if len(full_path) >= 2:
-                parent_path = full_path[:-2]
-                child_suffix = full_path[-2:]
-            else:
-                parent_path = full_path
-                child_suffix = []
-
-            node = HDNodeType(
-                depth=len(parent_path),
-                fingerprint=int.from_bytes(deriv_info.fingerprint, "big"),
-                child_num=parent_path[-1] if parent_path else 0,
-                chain_code=b"\x00" * 32,  # placeholder; Trezor derives from xpub
-                public_key=raw_pub,
-            )
-            hd_nodes.append(HDNodePathType(node=node, address_n=child_suffix))
-        else:
-            # Unknown key — use a dummy node
-            node = HDNodeType(
-                depth=0,
-                fingerprint=0,
-                child_num=0,
-                chain_code=b"\x00" * 32,
-                public_key=raw_pub,
-            )
-            hd_nodes.append(HDNodePathType(node=node, address_n=[]))
+    # Populate signatures array from existing partial_sigs
+    sigs: List[bytes] = [b""] * n
+    if partial_sigs:
+        for j, raw_pub in enumerate(pubkeys_raw):
+            for pub, sig in partial_sigs.items():
+                if pub.sec() == raw_pub:
+                    sigs[j] = sig
+                    break
 
     return MultisigRedeemScriptType(
         pubkeys=hd_nodes,
-        signatures=[b""] * n,
+        signatures=sigs,
         m=m,
     )
 
@@ -336,14 +326,16 @@ def psbt_to_trezor_inputs(
             InputScriptType.SPENDP2SHWITNESS,
         ):
             multisig = _parse_multisig_script(
-                witness_script_data, inp_scope.bip32_derivations, psbt
+                witness_script_data, inp_scope.bip32_derivations, psbt,
+                partial_sigs=inp_scope.partial_sigs,
             )
         elif (
             redeem_script_data
             and script_type == InputScriptType.SPENDMULTISIG
         ):
             multisig = _parse_multisig_script(
-                redeem_script_data, inp_scope.bip32_derivations, psbt
+                redeem_script_data, inp_scope.bip32_derivations, psbt,
+                partial_sigs=inp_scope.partial_sigs,
             )
 
         # Build the TxInputType
@@ -573,6 +565,7 @@ def sign_psbt(
     try:
         # Parse the PSBT
         _status("Parsing PSBT...")
+        psbt_bytes = bytes(psbt_bytes)
         psbt = PSBT.parse(psbt_bytes)
 
         # Connect to the Trezor
@@ -585,6 +578,18 @@ def sign_psbt(
             # Get master fingerprint
             _status("Reading device fingerprint...")
             master_fp = _get_master_fingerprint(client, coin_name)
+            _status(f"Device fingerprint: {master_fp.hex()}")
+
+            # Log PSBT fingerprints for comparison
+            psbt_fps = set()
+            for inp_scope in psbt.inputs:
+                for pub, deriv in inp_scope.bip32_derivations.items():
+                    psbt_fps.add(deriv.fingerprint.hex())
+            _status(f"PSBT fingerprints: {', '.join(sorted(psbt_fps))}")
+            if master_fp.hex() in psbt_fps:
+                _status("Fingerprint MATCH found")
+            else:
+                _status("WARNING: device fingerprint not in PSBT!")
 
             # Convert PSBT to trezorlib types
             _status("Preparing transaction...")
@@ -638,14 +643,18 @@ def sign_psbt(
             # Serialize the updated PSBT
             signed_psbt_b64 = psbt.to_base64()
 
-            result = {
-                "status": "signed",
-                "psbt": signed_psbt_b64,
-            }
-
-            # If we have a serialized tx (fully signed), include it
+            # If we have a serialized tx, the PSBT is fully signed
             if serialized_tx:
-                result["raw_tx"] = serialized_tx.hex()
+                result = {
+                    "status": "complete",
+                    "raw_tx": serialized_tx.hex(),
+                    "psbt": signed_psbt_b64,
+                }
+            else:
+                result = {
+                    "status": "partial",
+                    "psbt": signed_psbt_b64,
+                }
 
             _status("Signing complete.")
             return result
@@ -660,5 +669,5 @@ def sign_psbt(
         _status(f"Error: {e}")
         return {
             "status": "error",
-            "error": str(e),
+            "message": str(e),
         }

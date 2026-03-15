@@ -30,10 +30,13 @@ class AndroidHandle:
         self._bridge = bridge
 
     def open(self) -> None:
-        self._bridge.open()
+        # No-op: Kotlin opens the USB bridge before passing it to Python.
+        # Calling bridge.open() from Chaquopy's thread fails claimInterface.
+        pass
 
     def close(self) -> None:
-        self._bridge.close()
+        # No-op: Kotlin handles USB lifecycle in the finally block.
+        pass
 
     def write_chunk(self, chunk: bytes) -> None:
         if len(chunk) != CHUNK_SIZE:
@@ -75,7 +78,9 @@ class AndroidTransport(ProtocolBasedTransport):
         return self.handle.read_chunk()
 
     def open(self) -> None:
-        self.handle.open()
+        # No-op: Kotlin manages USB lifecycle.
+        pass
 
     def close(self) -> None:
-        self.handle.close()
+        # No-op: Kotlin manages USB lifecycle.
+        pass

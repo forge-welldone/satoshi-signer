@@ -31,6 +31,7 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
     Raises:
         ValueError: If the bytes are not a valid PSBT.
     """
+    psbt_bytes = bytes(psbt_bytes)
     if not psbt_bytes.startswith(PSBT_MAGIC):
         raise ValueError("Invalid PSBT: missing magic bytes")
 
@@ -54,11 +55,16 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
     for i, inp_scope in enumerate(psbt.inputs):
         # inp_scope.utxo is a property that returns witness_utxo or from non_witness_utxo
         utxo = inp_scope.utxo
+        try:
+            address = utxo.script_pubkey.address(net) if utxo and utxo.script_pubkey else "unknown"
+        except (ValueError, Exception):
+            address = "unknown"
         inp_data = {
             "index": i,
             "txid": inp_scope.txid.hex() if inp_scope.txid else "",
             "vout": inp_scope.vout if inp_scope.vout is not None else 0,
             "amount": utxo.value if utxo else 0,
+            "address": address,
         }
         result.inputs.append(inp_data)
 
@@ -88,15 +94,50 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
         result.fee = -1
 
     # Signing status
-    result.status, result.signers = _analyze_signing_status(psbt)
+    result.status, result.signers, required_sigs, total_sigs = _analyze_signing_status(psbt)
 
-    return {
+    # Auto-detect network from derivation paths (coin_type 1 = testnet)
+    detected_network = _detect_network(psbt)
+
+    out = {
         "inputs": result.inputs,
         "outputs": result.outputs,
         "fee": result.fee,
         "status": result.status,
         "signers": result.signers,
+        "network": detected_network,
     }
+    if required_sigs > 0:
+        out["required_sigs"] = required_sigs
+        out["total_sigs"] = total_sigs
+    return out
+
+
+def _detect_network(psbt: PSBT) -> str:
+    """Detect network from BIP32 derivation paths in the PSBT.
+
+    Coin type 1 (hardened) in the second path element means testnet.
+    Coin type 0 means mainnet. Defaults to "main" if undetermined.
+    """
+    HARDENED = 0x80000000
+    for inp_scope in psbt.inputs:
+        for pub, deriv in inp_scope.bip32_derivations.items():
+            path = deriv.derivation
+            if len(path) >= 2:
+                coin_type = path[1] & ~HARDENED
+                if coin_type == 1:
+                    return "test"
+                elif coin_type == 0:
+                    return "main"
+        for pub, (leaf_hashes, deriv) in inp_scope.taproot_bip32_derivations.items():
+            path = deriv.derivation
+            if len(path) >= 2:
+                coin_type = path[1] & ~HARDENED
+                if coin_type == 1:
+                    return "test"
+                elif coin_type == 0:
+                    return "main"
+    return "main"
 
 
 def _is_change_output(out_scope, input_fingerprints: set) -> bool:
@@ -121,19 +162,53 @@ def _is_change_output(out_scope, input_fingerprints: set) -> bool:
     return False
 
 
+def _parse_multisig_info(script_bytes: bytes) -> tuple:
+    """Extract m and n from a multisig script.
+
+    Returns (m, n) or (None, None) if not a recognizable multisig script.
+    """
+    if len(script_bytes) < 37:
+        return None, None
+    if script_bytes[-1] != 0xAE:  # OP_CHECKMULTISIG
+        return None, None
+
+    m_byte = script_bytes[0]
+    if not (0x51 <= m_byte <= 0x60):
+        return None, None
+    m = m_byte - 0x50
+
+    n_byte = script_bytes[-2]
+    if not (0x51 <= n_byte <= 0x60):
+        return None, None
+    n = n_byte - 0x50
+
+    return m, n
+
+
 def _analyze_signing_status(psbt: PSBT) -> tuple:
     """Determine signing status and list signers.
 
-    Returns a tuple of (status_str, signers_list).
+    Returns a tuple of (status_str, signers_list, required_sigs, total_sigs).
     Status is one of: "unsigned", "partially_signed", "fully_signed".
     Each signer is {"fingerprint": hex_str, "signed": bool}.
+    required_sigs and total_sigs are ints (0 if not multisig).
     """
     all_fingerprints: dict = {}
+    required_sigs = 0
+    total_sigs = 0
 
     for inp_scope in psbt.inputs:
         signed_pubs = set(inp_scope.partial_sigs.keys()) if inp_scope.partial_sigs else set()
         # taproot_sigs is a dict keyed by (pub, leaf_hash) tuples
         has_tap_sig = bool(inp_scope.taproot_sigs) if inp_scope.taproot_sigs else False
+
+        # Extract m-of-n from multisig scripts
+        ms = inp_scope.witness_script or inp_scope.redeem_script
+        if ms is not None:
+            m, n = _parse_multisig_info(ms.data)
+            if m is not None:
+                required_sigs = max(required_sigs, m)
+                total_sigs = max(total_sigs, n)
 
         for pub, deriv in inp_scope.bip32_derivations.items():
             # fingerprint is bytes; convert to hex for display
@@ -161,4 +236,4 @@ def _analyze_signing_status(psbt: PSBT) -> tuple:
     else:
         status = "unsigned"
 
-    return status, signers
+    return status, signers, required_sigs, total_sigs

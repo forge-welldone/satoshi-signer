@@ -5,6 +5,7 @@ End-to-end sign_psbt tests require a real Trezor and are not included.
 """
 
 import base64
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -320,22 +321,24 @@ class TestPsbtToPrevTxes:
 # Test _parse_multisig_script
 # ---------------------------------------------------------------------------
 
+def _make_multisig_script(pubs, m):
+    """Helper: build OP_m <pubs...> OP_n OP_CHECKMULTISIG."""
+    n = len(pubs)
+    script = bytes([0x50 + m])
+    for pub in pubs:
+        script += bytes([len(pub)]) + pub
+    script += bytes([0x50 + n, 0xAE])
+    return script
+
+
 class TestParseMultisigScript:
     def test_valid_2_of_3(self):
         """Parse a standard 2-of-3 multisig script."""
-        # Build: OP_2 <pub1(33)> <pub2(33)> <pub3(33)> OP_3 OP_CHECKMULTISIG
         pub1 = b"\x02" + b"\x01" * 32
         pub2 = b"\x02" + b"\x02" * 32
         pub3 = b"\x02" + b"\x03" * 32
 
-        script = (
-            b"\x52"           # OP_2
-            + b"\x21" + pub1  # PUSH(33) + pubkey
-            + b"\x21" + pub2
-            + b"\x21" + pub3
-            + b"\x53"         # OP_3
-            + b"\xae"         # OP_CHECKMULTISIG
-        )
+        script = _make_multisig_script([pub1, pub2, pub3], m=2)
 
         from embit.psbt import PSBT
         psbt = PSBT.__new__(PSBT)
@@ -345,6 +348,47 @@ class TestParseMultisigScript:
         assert result.m == 2
         assert len(result.pubkeys) == 3
         assert len(result.signatures) == 3
+
+    def test_hd_nodes_use_empty_address_n(self):
+        """Bug regression: HDNodePathType must use address_n=[] so the Trezor
+        uses public_key directly without attempting child derivation."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+
+        script = _make_multisig_script([pub1, pub2], m=1)
+
+        from embit.psbt import PSBT
+        psbt = PSBT.__new__(PSBT)
+
+        result = _parse_multisig_script(script, {}, psbt)
+        assert result is not None
+        for hd_node_path in result.pubkeys:
+            assert hd_node_path.address_n == []
+            assert hd_node_path.node.public_key in (pub1, pub2)
+
+    def test_populates_existing_partial_sigs(self):
+        """Bug regression: existing partial_sigs must be placed in the
+        signatures array at the correct positions."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+
+        script = _make_multisig_script([pub1, pub2, pub3], m=2)
+
+        # Simulate a partial_sigs dict keyed by embit PublicKey objects
+        from embit.ec import PublicKey
+        sig_for_pub2 = b"\x30\x44" + b"\xaa" * 68 + b"\x01"  # DER sig + sighash
+        partial_sigs = {PublicKey.parse(pub2): sig_for_pub2}
+
+        from embit.psbt import PSBT
+        psbt = PSBT.__new__(PSBT)
+
+        result = _parse_multisig_script(script, {}, psbt, partial_sigs=partial_sigs)
+        assert result is not None
+        # pub2 is at index 1 in the script
+        assert result.signatures[0] == b""
+        assert result.signatures[1] == sig_for_pub2
+        assert result.signatures[2] == b""
 
     def test_not_multisig(self):
         """Non-multisig script returns None."""
@@ -380,3 +424,63 @@ class TestGetMasterFingerprint:
             fp = _get_master_fingerprint(mock_client, "Bitcoin")
             assert fp == b"\x34\x42\x19\x3e"
             assert len(fp) == 4
+
+
+# ---------------------------------------------------------------------------
+# Regression: multisig PSBT-to-trezor conversion with real PSBT
+# ---------------------------------------------------------------------------
+
+PSBTS_DIR = os.path.join(os.path.dirname(__file__), "psbts")
+MULTISIG_PSBT_PATH = os.path.join(PSBTS_DIR, "trezor.multisig.2.a-ads-7d42c2e3.psbt")
+
+
+@pytest.mark.skipif(
+    not os.path.exists(MULTISIG_PSBT_PATH),
+    reason="Multisig PSBT fixture not present",
+)
+class TestMultisigPsbtConversion:
+    """Regression tests for multisig PSBT conversion to trezorlib types."""
+
+    @pytest.fixture
+    def psbt(self):
+        from embit.psbt import PSBT
+
+        with open(MULTISIG_PSBT_PATH, "rb") as f:
+            return PSBT.parse(f.read())
+
+    def test_inputs_have_multisig(self, psbt):
+        """Input should include MultisigRedeemScriptType."""
+        # Use the first signer's fingerprint (4da3bedb)
+        master_fp = bytes.fromhex("4da3bedb")
+        inputs, to_ignore = psbt_to_trezor_inputs(psbt, master_fp)
+
+        assert len(inputs) == 1
+        assert inputs[0].multisig is not None
+        assert inputs[0].multisig.m == 2
+        assert len(inputs[0].multisig.pubkeys) == 3
+
+    def test_multisig_hd_nodes_have_empty_address_n(self, psbt):
+        """Bug regression: HDNode address_n must be empty to avoid
+        derivation with placeholder chain_code."""
+        master_fp = bytes.fromhex("4da3bedb")
+        inputs, _ = psbt_to_trezor_inputs(psbt, master_fp)
+
+        for hd_node_path in inputs[0].multisig.pubkeys:
+            assert hd_node_path.address_n == []
+
+    def test_multisig_preserves_existing_sigs(self, psbt):
+        """Bug regression: existing partial_sigs must appear in
+        MultisigRedeemScriptType.signatures."""
+        master_fp = bytes.fromhex("4da3bedb")
+        inputs, _ = psbt_to_trezor_inputs(psbt, master_fp)
+
+        ms = inputs[0].multisig
+        # The PSBT has 1 existing signature
+        filled = [s for s in ms.signatures if s != b""]
+        assert len(filled) == 1
+
+    def test_unmatched_fp_goes_to_ignore(self, psbt):
+        """Non-signer fingerprint puts input in to_ignore list."""
+        wrong_fp = b"\xde\xad\xbe\xef"
+        inputs, to_ignore = psbt_to_trezor_inputs(psbt, wrong_fp)
+        assert to_ignore == [0]
