@@ -88,6 +88,7 @@ class PythonBridge {
 class SigningCallbackImpl(
     private val onStatusUpdate: (String) -> Unit,
     private val onPassphraseRequest: (availableOnDevice: Boolean) -> Unit,
+    private val onPassphraseSubmitted: () -> Unit = {},
 ) : PythonBridge.SigningCallback {
 
     companion object {
@@ -116,6 +117,7 @@ class SigningCallbackImpl(
     fun submitPassphrase(passphrase: String) {
         passphraseQueue.clear()  // prevent double-submission
         passphraseQueue.put(passphrase)
+        onPassphraseSubmitted()
     }
 
     /** Called by cancelSigning() to unblock the Python thread. */

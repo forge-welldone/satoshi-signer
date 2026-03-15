@@ -217,6 +217,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                             availableOnDevice, currentSigningCallback!!
                         )
                     },
+                    onPassphraseSubmitted = { _passphraseRequest.value = null },
                 )
                 currentSigningCallback = signingCallback
 
