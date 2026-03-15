@@ -20,12 +20,12 @@ Testing the Python signing code requires deploying to a real Android phone with 
 
 **File:** `tests/desktop_bridge.py`
 
-`DesktopUsbBridge` uses the `hidapi` Python package to communicate with a real Trezor on macOS. It implements the same interface as Kotlin's `UsbBridge`:
+`DesktopUsbBridge` is a thin adapter wrapping trezorlib's existing `HidHandle` (from `trezorlib.transport.hid`). This reuses trezorlib's tested HID handling — wirelink interface filtering, HID version probing, nonblocking read polling — instead of reimplementing it. It exposes the same interface as Kotlin's `UsbBridge`:
 
-- `open()` — enumerates HID devices, finds Trezor by vendor ID `0x1209` and product IDs `[0x53C0, 0x53C1]`, opens the device.
-- `close()` — closes the HID device.
-- `writeChunk(data: bytes)` — writes 64 bytes with HID report ID prefix (`0x00`).
-- `readChunk() -> bytes` — reads 64 bytes from the device.
+- `open()` — uses `HidTransport.enumerate()` to find Trezor devices, takes the first one's `HidHandle`, calls `handle.open()`.
+- `close()` — calls `handle.close()`.
+- `writeChunk(data: bytes)` — receives 64 bytes (matching the Kotlin bridge contract), delegates to `handle.write_chunk(data)` which internally prepends the HID report ID `0x00` before writing 65 bytes to the HID device.
+- `readChunk() -> bytes` — delegates to `handle.read_chunk()` which handles nonblocking polling with retry internally, returns 64 bytes.
 
 This plugs directly into `sign_psbt(psbt_bytes, bridge=DesktopUsbBridge())` — the identical code path as Android.
 
@@ -56,7 +56,11 @@ This plugs directly into `sign_psbt(psbt_bytes, bridge=DesktopUsbBridge())` — 
 {
   "metadata": {
     "recorded_at": "2026-03-15T14:30:00Z",
-    "scenario": "single-sig-p2wpkh"
+    "scenario": "single-sig-p2wpkh",
+    "network": "test",
+    "trezorlib_version": "0.13.9",
+    "trezor_model": "Safe 3",
+    "firmware_version": "2.8.1"
   },
   "exchanges": [
     {"dir": "w", "data": "3f2300..."},
@@ -65,7 +69,7 @@ This plugs directly into `sign_psbt(psbt_bytes, bridge=DesktopUsbBridge())` — 
 }
 ```
 
-Each entry is one 64-byte USB chunk. Writes and reads alternate as dictated by the trezorlib wire protocol.
+Each entry is one 64-byte USB chunk. Writes and reads alternate as dictated by the trezorlib wire protocol. Version metadata allows detecting cassette staleness if trezorlib or firmware changes wire format.
 
 ### CLI Script
 
@@ -76,9 +80,10 @@ python tests/sign_cli.py sign <psbt_file> [--record <cassette_path>] [--network 
 python tests/sign_cli.py parse <psbt_file>
 ```
 
-- `sign` — opens `DesktopUsbBridge` (wrapped in `RecordingBridge` if `--record`), calls `sign_psbt()`, prints the result, saves cassette if recording.
-- `parse` — calls `parse_psbt()` only, no hardware needed.
+- `sign` — opens `DesktopUsbBridge` (wrapped in `RecordingBridge` if `--record`), calls `sign_psbt()` with a print-based `status_callback`, prints the result, saves cassette if recording.
+- `parse` — calls `parse_psbt()` (from `remotesigner.psbt_parser`) only, no hardware needed.
 - Accepts base64-encoded or raw binary PSBT files.
+- The `status_callback` prints Trezor button prompts to stdout so the user knows when to confirm on-device.
 
 ### E2E Tests
 
