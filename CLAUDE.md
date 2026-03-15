@@ -15,6 +15,13 @@ Satoshi Signer — an Android app for signing Bitcoin PSBTs with a Trezor hardwa
 # Build and install on connected device
 ./gradlew installDebug
 
+# Run Android smoke tests (requires running emulator)
+./gradlew connectedDebugAndroidTest
+
+# Run a specific Android test class
+./gradlew connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.remotesigner.AppLaunchTest
+
 # Run Python tests (desktop, no Android needed)
 python -m pytest tests/ -v
 
@@ -34,7 +41,7 @@ Python test setup requires a venv: `python3 -m venv .venv && source .venv/bin/ac
 
 Desktop signing also requires `brew install libusb` (Trezor Safe 3 uses WebUSB on macOS).
 
-No Android unit tests, lint, or ktlint are configured yet.
+Android test setup requires a running emulator: `emulator -avd test_device -no-audio &`
 
 ## Architecture
 
@@ -56,6 +63,8 @@ Compose UI (4 screens) → SignerViewModel (sealed class state machine)
 
 - `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge)
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
+- `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented smoke tests (Compose UI)
+- `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
 - `docs/superpowers/specs/` — Design specifications

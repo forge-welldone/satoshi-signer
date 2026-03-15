@@ -60,9 +60,39 @@ Other Trezor models with USB-C should work but are untested. Models requiring ho
 
 ### Prerequisites
 
-- Android Studio with SDK 35
-- JDK 17
-- An Android device with USB-C OTG support
+- JDK 17 (`brew install openjdk@17`)
+- Android SDK 35 (`brew install --cask android-commandlinetools`, then use `sdkmanager`)
+- An Android device with USB-C OTG support (for on-device testing)
+
+No Android Studio required. See below for full command-line setup.
+
+### Command-Line SDK Setup (macOS)
+
+```bash
+# Install JDK and Android tools
+brew install openjdk@17
+brew install --cask android-commandlinetools
+
+# Add to ~/.zshrc
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export ANDROID_HOME=$HOME/Library/Android/sdk
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+
+# Install SDK components
+mkdir -p "$ANDROID_HOME"
+sdkmanager --sdk_root="$ANDROID_HOME" \
+  "platforms;android-35" "build-tools;35.0.0" "platform-tools" \
+  "emulator" "system-images;android-35;google_apis;arm64-v8a" \
+  "cmdline-tools;latest"
+sdkmanager --sdk_root="$ANDROID_HOME" --licenses
+
+# Create local.properties
+echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties
+
+# Create emulator
+avdmanager create avd -n test_device \
+  -k "system-images;android-35;google_apis;arm64-v8a" -d "pixel_7"
+```
 
 ### Build
 
@@ -77,6 +107,19 @@ Chaquopy automatically downloads Python 3.13 and pip-installs `trezor`, `embit`,
 ```bash
 ./gradlew installDebug
 ```
+
+### Run Android Tests
+
+```bash
+# Start emulator
+emulator -avd test_device -no-audio &
+adb wait-for-device
+
+# Run smoke tests
+./gradlew connectedDebugAndroidTest
+```
+
+Smoke tests verify all 4 screens render correctly and state-machine navigation works.
 
 ### Run Tests (Python, desktop)
 
@@ -110,6 +153,11 @@ Recorded cassettes are replayed by `tests/test_signing_e2e.py` — this tests th
 ## Project Structure
 
 ```
+app/src/androidTest/kotlin/com/remotesigner/
+│   ├── TestFixtures.kt             # Mock AppState instances for tests
+│   ├── AppLaunchTest.kt            # App launch smoke test
+│   ├── ScreenRenderTest.kt         # Screen render smoke tests
+│   └── NavigationTest.kt           # State machine navigation test
 app/src/main/
 ├── kotlin/com/remotesigner/
 │   ├── MainActivity.kt              # Entry point, intent handling
@@ -174,7 +222,7 @@ tests/
 - **Android only** — iOS does not expose USB HID to apps (Trezor Safe 7 with Bluetooth would be needed)
 - **On-device PIN/passphrase only** — host-side PIN matrix (old Model One firmware) not supported
 - **Intent filter for `.psbt` files is best-effort** — Android's `pathPattern` doesn't reliably match `content://` URIs. The file picker is the primary import path.
-- **Not yet tested with Gradle build** — Python tests pass on desktop; Android build and on-device testing is the next step
+- **Embit wheel vendored** — `embit` is pure Python but only distributed as sdist on PyPI; Chaquopy requires wheels, so a pre-built wheel is checked in at `app/pip_wheels/`
 
 ## Future Enhancements
 
