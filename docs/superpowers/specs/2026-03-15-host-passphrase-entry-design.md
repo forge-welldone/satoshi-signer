@@ -52,7 +52,7 @@ The empty-string sentinel is safe because entering an empty passphrase on-phone 
 
 **`signer.py`**
 
-No changes needed. `signer.py` already passes the callback to `AndroidTrezorUi`. The new `requestPassphrase` method is called by trezorlib's protocol driver transparently.
+No structural changes. `signer.py` passes the callback object to `AndroidTrezorUi(status_callback)`. Since Python uses duck typing, the callback just needs to have the `requestPassphrase` method — `AndroidTrezorUi` will call it via `self._callback.requestPassphrase(...)`. The callback object passed from Kotlin must be the new `SigningCallbackImpl` (which has both `onStatus` and `requestPassphrase`).
 
 ### Kotlin Changes
 
@@ -69,9 +69,10 @@ interface SigningCallback {
 
 A `SigningCallbackImpl` class wraps the interface with a `LinkedBlockingQueue<String?>` for the passphrase exchange:
 
-- `requestPassphrase()` — posts a UI request to the main thread, then blocks on `queue.take()`
-- `submitPassphrase(value)` — called by the UI, puts the value on the queue to unblock Python
+- `requestPassphrase()` — sets `_passphraseRequest` StateFlow (thread-safe, Compose recomposes on main thread), then blocks on `queue.take()`
+- `submitPassphrase(value)` — called by the UI, puts the value on the queue to unblock Python. One-shot: clears the queue before putting to prevent double-submission from rapid taps.
 - `null` submission signals cancellation
+- `cancel()` — called by `cancelSigning()` to unblock the queue if the user cancels signing while the passphrase dialog is showing. Puts `null` on the queue.
 
 **`SignerViewModel.kt`**
 
@@ -87,7 +88,11 @@ private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
 val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest
 ```
 
-During `signWithTrezor()`, the `SigningCallbackImpl`'s `onPassphraseRequest` lambda sets `_passphraseRequest` on the main thread. After submission, it resets to `null`.
+The ViewModel constructs `SigningCallbackImpl` inside `signWithTrezor()`, before the `withContext(Dispatchers.IO)` block. The `onPassphraseRequest` lambda sets `_passphraseRequest`. After submission, it resets to `null`. The `SigningCallbackImpl` does not outlive the signing coroutine.
+
+`cancelSigning()` must call `callback.cancel()` to unblock the passphrase queue if the user cancels while the dialog is showing — otherwise the Python thread hangs on `queue.take()` and coroutine cancellation cannot interrupt it.
+
+The `PythonBridge.signPsbt()` parameter changes from `statusCallback: (String) -> Unit` to accepting a `SigningCallbackImpl` object that implements both `onStatus` and `requestPassphrase`.
 
 **`SigningScreen.kt`**
 
@@ -111,7 +116,7 @@ Observes `passphraseRequest`. When non-null, shows a modal dialog:
 
 **`tests/test_signing_e2e.py`**
 
-Mock callback gains `requestPassphrase` returning `""` (on-device), matching recorded cassettes.
+Mock callback gains `requestPassphrase` returning `""` (on-device), matching recorded cassettes. Note: cassettes are tied to the passphrase entry method used during recording. A cassette recorded with on-device entry cannot be replayed with host-side entry (the USB exchanges differ). The mock's return value must match how the cassette was recorded.
 
 ### Files NOT Changed
 
@@ -131,6 +136,10 @@ Mock callback gains `requestPassphrase` returning `""` (on-device), matching rec
 
 **`available_on_device == false`:** Older Trezor models may not support on-device passphrase. The dialog shows only the text field — no "Enter on device" option. This is forward-compatible.
 
+**`button_request(PassphraseEntry)` status message:** trezorlib sends a `ButtonRequestType.PassphraseEntry` button request before calling `get_passphrase()`. The current code displays "Please enter passphrase on your Trezor device." in the log. When the user chooses host-side entry, this message is misleading but harmless — it appears briefly in the debug log before the passphrase dialog opens. No change needed; the dialog itself makes the interaction clear.
+
+**Trezor disconnection mid-dialog:** If the Trezor is unplugged while the passphrase dialog is showing, the next USB I/O after passphrase submission will fail. The ViewModel catches this and transitions to Error state. No special handling needed.
+
 ## Security Considerations
 
 Host-side passphrase entry is less secure than on-device: the passphrase transits through the phone's memory and could be exposed by malware or screen recording. The dialog should note this trade-off (e.g., small text: "Less secure than on-device entry"). The choice is the user's, per-transaction.
@@ -138,3 +147,4 @@ Host-side passphrase entry is less secure than on-device: the passphrase transit
 ## Future Extensions
 
 - **NFC tag passphrase entry:** The same `submitPassphrase(string)` interface could accept input from an NFC tag read instead of a text field. No architectural changes needed.
+- **`FLAG_SECURE`:** Could add `FLAG_SECURE` to the Activity window during passphrase entry to block screenshots and screen recording. Trade-off: blocks screenshots of the entire signing flow.
