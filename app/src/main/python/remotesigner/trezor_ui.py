@@ -2,9 +2,14 @@
 Trezor UI callbacks for Trezor Safe 3.
 
 Implements the TrezorClientUI protocol (trezorlib.ui.TrezorClientUI) for
-headless Android use: PIN and passphrase are always entered on the device,
-never on the host.  Status messages are forwarded to a Java callback object
-that exposes onStatus(str) via Chaquopy.
+Android use.  PIN is always entered on the device.  Passphrase entry is
+delegated to a Java callback object that can show a UI dialog — the user
+chooses between on-device and host-side entry at runtime.
+
+The callback object (bridged via Chaquopy) must implement:
+  - onStatus(str) — for status messages
+  - requestPassphrase(bool) -> str — for passphrase entry
+    Returns "" for on-device, non-empty string for host-side entry.
 """
 
 from typing import Optional, Union
@@ -99,16 +104,38 @@ class AndroidTrezorUi:
         """
         Called by trezorlib when a passphrase is required.
 
-        Always signals on-device passphrase entry by returning the
-        ``PASSPHRASE_ON_DEVICE`` sentinel.  If for some reason the device
-        reports that on-device entry is not available (``available_on_device``
-        is False), raise RuntimeError rather than prompting the host.
+        Delegates to the callback's ``requestPassphrase(availableOnDevice)``
+        method.  The callback returns:
+        - ``""`` (empty string) -> on-device entry (returns PASSPHRASE_ON_DEVICE)
+        - non-empty string -> host-side entry (returns the string)
+
+        Falls back to on-device entry if the callback is missing or fails.
         """
+        if self._callback is not None:
+            try:
+                response = str(self._callback.requestPassphrase(available_on_device))
+            except Exception:
+                if available_on_device:
+                    self._send_status("Please enter passphrase on your Trezor device.")
+                    return PASSPHRASE_ON_DEVICE
+                raise RuntimeError(
+                    "Passphrase entry failed and on-device entry is not available."
+                )
+
+            if response == "":
+                if available_on_device:
+                    self._send_status("Please enter passphrase on your Trezor device.")
+                    return PASSPHRASE_ON_DEVICE
+                raise RuntimeError(
+                    "On-device passphrase requested but not available on this device."
+                )
+            return response
+
+        # No callback -- fall back to on-device if possible
         if available_on_device:
             self._send_status("Please enter passphrase on your Trezor device.")
             return PASSPHRASE_ON_DEVICE
 
         raise RuntimeError(
-            "On-device passphrase entry is not available on this Trezor. "
-            "Host-side passphrase entry is not supported by this app."
+            "On-device passphrase entry is not available and no callback provided."
         )
