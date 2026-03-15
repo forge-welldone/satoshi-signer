@@ -6,7 +6,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.test.ext.junit4.runners.AndroidJUnit4
 import com.remotesigner.ui.HomeScreen
 import com.remotesigner.ui.ResultScreen
 import com.remotesigner.ui.SigningScreen
@@ -15,9 +14,6 @@ import com.remotesigner.ui.theme.SatoshiSignerTheme
 import com.remotesigner.viewmodel.AppState
 import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
-
-@RunWith(AndroidJUnit4::class)
 class NavigationTest {
 
     @get:Rule
