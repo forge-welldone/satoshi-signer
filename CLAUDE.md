@@ -57,7 +57,15 @@ Compose UI (4 screens) → SignerViewModel (sealed class state machine)
 
 **USB bridge inversion:** Python's trezorlib needs USB access, but Android USB APIs are Kotlin-only. Solution: Kotlin's `UsbBridge` does raw 64-byte interrupt endpoint I/O, Python's `AndroidTransport`/`AndroidHandle` wrap it to satisfy trezorlib's `Transport` protocol. Python calls back into Kotlin for every USB read/write.
 
-**Key constraint:** Trezor uses interrupt endpoints (not bulk). Must use `UsbRequest.queue()` + `requestWait()`, not `bulkTransfer()`.
+**Key constraint:** Trezor uses interrupt endpoints (not bulk). Must use `UsbRequest.queue()` + `requestWait()`, not `bulkTransfer()`. USB read timeout is 10 minutes to accommodate slow passphrase entry on the Trezor's screen.
+
+**USB lifecycle owned by Kotlin** — `UsbBridge.open()`/`close()` must be called from Kotlin (IO dispatcher), not from Chaquopy's Python thread. `claimInterface()` fails when called from Chaquopy's native thread. `AndroidHandle.open()`/`close()` are no-ops; the ViewModel opens the bridge before calling Python and closes it in `finally`.
+
+**Trezor exposes two USB interfaces** — Interface 0: VENDOR_SPEC (0xFF, WebUSB), Interface 1: HID (0x03). Both have interrupt endpoints. Firmware responds on WebUSB (interface 0), so prefer VENDOR_SPEC over HID when claiming.
+
+**Network auto-detected from PSBT** — `parse_psbt` reads BIP32 derivation paths: coin_type 1 = testnet, coin_type 0 = mainnet. The detected network is passed through to `sign_psbt` so the correct coin name ("Bitcoin" vs "Testnet") is used.
+
+**PythonBridge uses JSON round-trip** — Chaquopy's `toJava(Object.class)` doesn't recursively convert nested Python dicts/lists. `PythonBridge` serializes Python return values with `json.dumps`, then parses in Kotlin with `org.json.JSONObject`.
 
 ## Source Layout
 
@@ -83,7 +91,9 @@ Compose UI (4 screens) → SignerViewModel (sealed class state machine)
 - **Stateless app** — No database, no wallet storage, no caching. Killed process just loses the in-progress transaction.
 - **App never touches private keys** — All signing happens on Trezor's secure element. No seed phrases or key material on phone.
 - **Python modules are desktop-testable** — The bridge pattern keeps Python code Android-agnostic so `pytest` works without an emulator. Desktop signing uses `DesktopUsbBridge` (WebUSB/HID) in place of Kotlin's `UsbBridge`. Recorded USB cassettes enable E2E test replay without hardware.
-- **Safe 3 PIN/passphrase is on-device only** — No host-side PIN matrix. `get_pin()` raises; `get_passphrase()` returns `PASSPHRASE_ON_DEVICE`.
+- **Safe 3 PIN is on-device only** — No host-side PIN matrix. `get_pin()` raises. Passphrase entry is user's choice: on-device (default) or on-phone. When trezorlib calls `get_passphrase()`, a dialog lets the user choose. `SigningCallbackImpl` bridges the UI via a `LinkedBlockingQueue`.
+- **Screen stays on during signing** — `FLAG_KEEP_SCREEN_ON` is set while the Signing screen is displayed. Android suspends USB when the screen locks, killing the Trezor connection mid-signing.
+- **USB_DEVICE_ATTACHED intent filter required** — The manifest must declare the USB device filter so our app claims the Trezor when plugged in. Without it, other apps (e.g., Trezor Suite) steal the USB device exclusively. `singleTask` launch mode prevents activity recreation when the intent fires. The ViewModel polls for device attachment when the Trezor isn't connected yet.
 
 ## Targets
 
