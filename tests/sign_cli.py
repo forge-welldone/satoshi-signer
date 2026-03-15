@@ -10,6 +10,7 @@ import argparse
 import base64
 import json
 import sys
+import getpass
 import os
 
 # Add Python source to path (same as conftest.py)
@@ -21,10 +22,18 @@ from remotesigner.signer import sign_psbt
 
 
 class PrintStatusCallback:
-    """Status callback that prints to stdout."""
+    """Status callback that prints to stdout and handles passphrase prompts."""
 
     def onStatus(self, message):
         print(f"  [{message}]")
+
+    def requestPassphrase(self, available_on_device):
+        if available_on_device:
+            choice = input("  Enter passphrase on (d)evice or (p)hone? [d]: ").strip().lower()
+            if choice != "p":
+                return ""  # empty string = on-device
+        passphrase = getpass.getpass("  Passphrase: ")
+        return passphrase
 
 
 def load_psbt(path: str) -> bytes:
@@ -147,13 +156,13 @@ def cmd_sign(args):
     callback = PrintStatusCallback()
     result = sign_psbt(psbt_bytes, bridge, status_callback=callback, network=args.network)
 
-    if result["status"] == "signed":
-        print(f"\nSigning successful!")
+    if result["status"] in ("complete", "partial"):
+        print(f"\nSigning successful! (status: {result['status']})")
         print(f"  Signed PSBT (base64): {result['psbt'][:80]}...")
         if "raw_tx" in result:
             print(f"  Raw TX (hex): {result['raw_tx'][:80]}...")
     else:
-        print(f"\nSigning failed: {result.get('error', 'unknown error')}")
+        print(f"\nSigning failed: {result.get('message', 'unknown error')}")
         sys.exit(1)
 
     # Save cassette if recording
