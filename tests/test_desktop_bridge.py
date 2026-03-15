@@ -138,3 +138,132 @@ class TestPlaybackBridge:
         bridge.writeChunk(bytes.fromhex("03" * 64))
         assert bridge.readChunk() == bytes.fromhex("04" * 64)
         bridge.close()
+
+
+# ---------------------------------------------------------------------------
+# RecordingBridge tests
+# ---------------------------------------------------------------------------
+
+class MockInnerBridge:
+    """Minimal bridge that echoes back fixed data for testing RecordingBridge."""
+
+    def __init__(self, read_responses):
+        self._read_responses = list(read_responses)
+        self._read_pos = 0
+        self.opened = False
+        self.closed = False
+
+    def open(self):
+        self.opened = True
+
+    def close(self):
+        self.closed = True
+
+    def writeChunk(self, data):
+        pass
+
+    def readChunk(self):
+        resp = self._read_responses[self._read_pos]
+        self._read_pos += 1
+        return resp
+
+
+class TestRecordingBridge:
+    def test_records_write_and_read(self):
+        from desktop_bridge import RecordingBridge
+
+        inner = MockInnerBridge(read_responses=[bytes.fromhex("bb" * 64)])
+        rec = RecordingBridge(inner)
+        rec.open()
+        rec.writeChunk(bytes.fromhex("aa" * 64))
+        result = rec.readChunk()
+        assert result == bytes.fromhex("bb" * 64)
+        rec.close()
+
+        cassette = rec.get_cassette(scenario="test-scenario")
+        assert len(cassette["exchanges"]) == 2
+        assert cassette["exchanges"][0] == {"dir": "w", "data": "aa" * 64}
+        assert cassette["exchanges"][1] == {"dir": "r", "data": "bb" * 64}
+        assert cassette["metadata"]["scenario"] == "test-scenario"
+        assert "recorded_at" in cassette["metadata"]
+
+    def test_delegates_open_close(self):
+        from desktop_bridge import RecordingBridge
+
+        inner = MockInnerBridge(read_responses=[])
+        rec = RecordingBridge(inner)
+        rec.open()
+        assert inner.opened
+        rec.close()
+        assert inner.closed
+
+    def test_save_cassette_to_file(self, tmp_path):
+        from desktop_bridge import RecordingBridge
+
+        inner = MockInnerBridge(read_responses=[bytes(64)])
+        rec = RecordingBridge(inner)
+        rec.open()
+        rec.writeChunk(bytes(64))
+        rec.readChunk()
+        rec.close()
+
+        path = tmp_path / "cassette.json"
+        rec.save_cassette(str(path), scenario="save-test")
+
+        with open(path) as f:
+            loaded = json.load(f)
+        assert len(loaded["exchanges"]) == 2
+        assert loaded["metadata"]["scenario"] == "save-test"
+
+    def test_metadata_includes_versions(self):
+        from desktop_bridge import RecordingBridge
+
+        inner = MockInnerBridge(read_responses=[])
+        rec = RecordingBridge(inner)
+        rec.open()
+        rec.close()
+
+        cassette = rec.get_cassette(
+            scenario="test",
+            network="test",
+            trezor_model="Safe 3",
+            firmware_version="2.8.1",
+        )
+        assert cassette["metadata"]["network"] == "test"
+        assert cassette["metadata"]["trezor_model"] == "Safe 3"
+        assert cassette["metadata"]["firmware_version"] == "2.8.1"
+        assert "trezorlib_version" in cassette["metadata"]
+
+    def test_metadata_stores_input_psbt(self):
+        from desktop_bridge import RecordingBridge
+
+        inner = MockInnerBridge(read_responses=[])
+        rec = RecordingBridge(inner)
+        rec.open()
+        rec.close()
+
+        cassette = rec.get_cassette(
+            scenario="test",
+            input_psbt_b64="cHNidP8BAAAAAAA=",
+        )
+        assert cassette["metadata"]["input_psbt_b64"] == "cHNidP8BAAAAAAA="
+
+    def test_cassette_replays_correctly(self):
+        """Record, then play back — full round-trip."""
+        from desktop_bridge import RecordingBridge, PlaybackBridge
+
+        read_data = bytes.fromhex("dd" * 64)
+        write_data = bytes.fromhex("cc" * 64)
+        inner = MockInnerBridge(read_responses=[read_data])
+        rec = RecordingBridge(inner)
+        rec.open()
+        rec.writeChunk(write_data)
+        rec.readChunk()
+        rec.close()
+
+        cassette = rec.get_cassette(scenario="roundtrip")
+        playback = PlaybackBridge(cassette)
+        playback.open()
+        playback.writeChunk(write_data)
+        assert playback.readChunk() == read_data
+        playback.close()

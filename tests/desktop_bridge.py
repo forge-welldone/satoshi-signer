@@ -59,3 +59,55 @@ class PlaybackBridge:
         )
         self._pos += 1
         return bytes.fromhex(entry["data"])
+
+
+class RecordingBridge:
+    """Wraps any bridge and records all USB exchanges to a cassette.
+
+    After use, call get_cassette() or save_cassette() to retrieve the recording.
+    """
+
+    def __init__(self, inner_bridge) -> None:
+        self._inner = inner_bridge
+        self._exchanges: list = []
+
+    def open(self) -> None:
+        self._inner.open()
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def writeChunk(self, data: bytes) -> None:
+        self._exchanges.append({"dir": "w", "data": bytes(data).hex()})
+        self._inner.writeChunk(data)
+
+    def readChunk(self) -> bytes:
+        data = self._inner.readChunk()
+        self._exchanges.append({"dir": "r", "data": bytes(data).hex()})
+        return data
+
+    def get_cassette(self, **extra_metadata) -> dict:
+        """Return the recorded cassette as a dict.
+
+        All keyword arguments are stored in metadata. Typical keys:
+        scenario, network, trezor_model, firmware_version, input_psbt_b64.
+        trezorlib_version is added automatically.
+        """
+        import trezorlib  # lazy import — only needed at save time
+
+        metadata = {
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "trezorlib_version": trezorlib.__version__,
+        }
+        metadata.update(extra_metadata)
+
+        return {
+            "metadata": metadata,
+            "exchanges": list(self._exchanges),
+        }
+
+    def save_cassette(self, path: str, **kwargs) -> None:
+        """Write the cassette to a JSON file."""
+        cassette = self.get_cassette(**kwargs)
+        with open(path, "w") as f:
+            json.dump(cassette, f, indent=2)
