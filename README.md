@@ -87,6 +87,26 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
+Tests include unit tests for all Python modules plus end-to-end signing tests that replay pre-recorded Trezor USB exchanges (no hardware needed).
+
+### Desktop Signing with Real Trezor
+
+You can test the full signing flow on your Mac without deploying to Android. Requires `libusb` (`brew install libusb`).
+
+```bash
+# Parse a PSBT (no hardware needed)
+python tests/sign_cli.py --network test parse path/to/file.psbt
+
+# Sign with a real Trezor plugged in via USB
+python tests/sign_cli.py --network test sign path/to/file.psbt
+
+# Sign and record USB exchanges for replay in automated tests
+python tests/sign_cli.py --network test sign path/to/file.psbt \
+  --record tests/cassettes/scenario-name.json
+```
+
+Recorded cassettes are replayed by `tests/test_signing_e2e.py` — this tests the entire `sign_psbt()` code path (protobuf construction, wire protocol, signature insertion) without a Trezor.
+
 ## Project Structure
 
 ```
@@ -114,6 +134,19 @@ app/src/main/
 └── res/
     ├── xml/usb_device_filter.xml   # Trezor USB vendor ID filter
     └── xml/file_paths.xml          # FileProvider for PSBT export
+
+tests/
+├── desktop_bridge.py               # DesktopUsbBridge, RecordingBridge, PlaybackBridge
+├── sign_cli.py                     # CLI for desktop signing + cassette recording
+├── test_signing_e2e.py             # E2E tests replaying recorded cassettes
+├── test_psbt_parser.py             # PSBT parsing tests
+├── test_signer.py                  # Signer module tests
+├── test_broadcaster.py             # Broadcasting tests
+├── test_usb_transport.py           # USB transport tests
+├── test_desktop_bridge.py          # Desktop bridge unit tests
+├── cassettes/                      # Recorded USB exchange JSON files
+│   └── single-sig-p2wpkh.json
+└── psbts/                          # Test PSBT files
 ```
 
 ## Dependencies
@@ -141,7 +174,7 @@ app/src/main/
 - **Android only** — iOS does not expose USB HID to apps (Trezor Safe 7 with Bluetooth would be needed)
 - **On-device PIN/passphrase only** — host-side PIN matrix (old Model One firmware) not supported
 - **Intent filter for `.psbt` files is best-effort** — Android's `pathPattern` doesn't reliably match `content://` URIs. The file picker is the primary import path.
-- **Not yet tested with Gradle build** — Python tests pass on desktop; Android build and end-to-end testing with a real Trezor is the next step
+- **Not yet tested with Gradle build** — Python tests pass on desktop; Android build and on-device testing is the next step
 
 ## Future Enhancements
 

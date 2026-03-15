@@ -20,16 +20,16 @@ Testing the Python signing code requires deploying to a real Android phone with 
 
 **File:** `tests/desktop_bridge.py`
 
-`DesktopUsbBridge` is a thin adapter wrapping trezorlib's existing `HidHandle` (from `trezorlib.transport.hid`). This reuses trezorlib's tested HID handling — wirelink interface filtering, HID version probing, nonblocking read polling — instead of reimplementing it. It exposes the same interface as Kotlin's `UsbBridge`:
+`DesktopUsbBridge` is a thin adapter wrapping trezorlib's transport handles. It tries WebUSB first (needed for Trezor Safe 3 on macOS, which only exposes a WebUSB interface), then falls back to HID. Both handle types expose the same `write_chunk`/`read_chunk` interface. It exposes the same interface as Kotlin's `UsbBridge`:
 
-- `open()` — uses `HidTransport.enumerate()` to find Trezor devices, takes the first one's `HidHandle`, calls `handle.open()`.
+- `open()` — tries `WebUsbTransport.enumerate()` first, then `HidTransport.enumerate()`, takes the first device's handle, calls `handle.open()`.
 - `close()` — calls `handle.close()`.
-- `writeChunk(data: bytes)` — receives 64 bytes (matching the Kotlin bridge contract), delegates to `handle.write_chunk(data)` which internally prepends the HID report ID `0x00` before writing 65 bytes to the HID device.
-- `readChunk() -> bytes` — delegates to `handle.read_chunk()` which handles nonblocking polling with retry internally, returns 64 bytes.
+- `writeChunk(data: bytes)` — receives 64 bytes (matching the Kotlin bridge contract), delegates to `handle.write_chunk(data)`.
+- `readChunk() -> bytes` — delegates to `handle.read_chunk()`, returns 64 bytes.
 
 This plugs directly into `sign_psbt(psbt_bytes, bridge=DesktopUsbBridge())` — the identical code path as Android.
 
-**Dependency:** `hidapi` added to `requirements-dev.txt`. Only needed on desktop, not bundled in the Android build.
+**Dependencies:** `hidapi` added to `requirements-dev.txt`. Also requires `libusb` system library (`brew install libusb` on macOS) for WebUSB transport.
 
 ### Recording Bridge
 
@@ -46,7 +46,8 @@ This plugs directly into `sign_psbt(psbt_bytes, bridge=DesktopUsbBridge())` — 
 - Loads a cassette JSON file on init.
 - `writeChunk(data)` — asserts `data` matches the next expected write in the sequence. Raises `AssertionError` with a diff if it diverges.
 - `readChunk()` — returns the next recorded read response.
-- On `close()`, asserts all exchanges were consumed.
+- `close()` — no-op (trezorlib may close/reopen the transport mid-session during passphrase handling).
+- `assert_consumed()` — verifies all exchanges were replayed. Called explicitly by tests after the full operation.
 
 ### Cassette Format
 
