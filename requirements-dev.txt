@@ -3,3 +3,4 @@ embit>=0.7
 requests>=2.28
 pytest>=7.0
 pytest-mock>=3.10
+hidapi
