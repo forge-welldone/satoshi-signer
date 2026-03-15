@@ -22,16 +22,17 @@ class AndroidTrezorUi:
     """
     UI handler for Trezor Safe 3 running inside an Android app.
 
-    All sensitive input (PIN, passphrase) is handled on-device.
-    Human-readable status strings are forwarded to *callback* via
-    ``callback.onStatus(message)``, where *callback* is a Java object
-    bridged through Chaquopy.
+    PIN is always entered on-device.  Passphrase entry is delegated to
+    the callback's ``requestPassphrase(bool)`` method, which lets the
+    user choose between on-device and host-side entry at runtime.
+    Status strings are forwarded via ``callback.onStatus(message)``.
 
     Parameters
     ----------
     callback:
-        A Java/Chaquopy object that implements ``onStatus(String)``.
-        Pass ``None`` to suppress status output (useful in tests).
+        A Java/Chaquopy object that implements ``onStatus(String)``
+        and ``requestPassphrase(bool) -> str``.
+        Pass ``None`` to fall back to on-device passphrase entry.
     """
 
     def __init__(self, callback=None) -> None:

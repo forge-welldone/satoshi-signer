@@ -211,6 +211,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                         viewModelScope.launch { log("Python: $status") }
                     },
                     onPassphraseRequest = { availableOnDevice ->
+                        // Safe: currentSigningCallback is assigned on the next line,
+                        // and this lambda is only called from Python during signing.
                         _passphraseRequest.value = PassphraseRequest(
                             availableOnDevice, currentSigningCallback!!
                         )
@@ -252,6 +254,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
                 _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
             } finally {
+                _passphraseRequest.value = null
+                currentSigningCallback = null
                 currentUsbBridge?.close()
                 currentUsbBridge = null
             }

@@ -90,7 +90,12 @@ class SigningCallbackImpl(
     private val onPassphraseRequest: (availableOnDevice: Boolean) -> Unit,
 ) : PythonBridge.SigningCallback {
 
-    private val passphraseQueue = LinkedBlockingQueue<String?>(1)
+    companion object {
+        /** Sentinel value for cancellation (LinkedBlockingQueue doesn't accept null). */
+        internal const val CANCEL_SENTINEL = "\u0000__CANCEL__"
+    }
+
+    private val passphraseQueue = LinkedBlockingQueue<String>(1)
 
     override fun onStatus(status: String) = onStatusUpdate(status)
 
@@ -101,7 +106,7 @@ class SigningCallbackImpl(
     override fun requestPassphrase(availableOnDevice: Boolean): String {
         onPassphraseRequest(availableOnDevice)
         val response = passphraseQueue.take()  // blocks Python thread
-        if (response == null) {
+        if (response == CANCEL_SENTINEL) {
             throw RuntimeException("Passphrase entry cancelled")
         }
         return response
@@ -116,6 +121,6 @@ class SigningCallbackImpl(
     /** Called by cancelSigning() to unblock the Python thread. */
     fun cancel() {
         passphraseQueue.clear()
-        passphraseQueue.put(null)
+        passphraseQueue.put(CANCEL_SENTINEL)
     }
 }
