@@ -46,8 +46,9 @@ chaquopy {
         version = "3.13"
         pip {
             install("trezor==0.13.9")
-            install("embit>=0.7")
             install("requests>=2.28")
+            options("--find-links", "pip_wheels")
+            install("embit>=0.7")
         }
     }
 }
