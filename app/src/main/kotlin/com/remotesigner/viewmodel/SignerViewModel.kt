@@ -5,14 +5,22 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
+import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.usb.TrezorUsbManager
 import com.remotesigner.usb.UsbBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+data class TxInput(
+    val address: String,
+    val amount: Long,
+)
 
 data class TxOutput(
     val address: String,
@@ -29,14 +37,17 @@ data class SignerInfo(
 sealed class AppState {
     data object Home : AppState()
     data class TransactionReview(
+        val inputs: List<TxInput>,
         val outputs: List<TxOutput>,
         val fee: Long,
         val totalSent: Long,
         val status: String,
         val signers: List<SignerInfo>,
         val warnings: List<String>,
+        val requiredSigs: Int = 0,
+        val totalSigs: Int = 0,
     ) : AppState()
-    data class Signing(val message: String) : AppState()
+    data class Signing(val message: String, val log: String = "") : AppState()
     data class Result(
         val isComplete: Boolean,
         val txid: String? = null,
@@ -48,6 +59,11 @@ sealed class AppState {
     data class Error(val message: String) : AppState()
 }
 
+data class PassphraseRequest(
+    val availableOnDevice: Boolean,
+    val callback: SigningCallbackImpl,
+)
+
 class SignerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow<AppState>(AppState.Home)
@@ -57,7 +73,12 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     val trezorUsb = TrezorUsbManager(application)
 
     private var currentPsbtBytes: ByteArray? = null
+    private var currentNetwork: String = "main"
     private var currentUsbBridge: UsbBridge? = null
+    private var signingJob: Job? = null
+    private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
+    val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest.asStateFlow()
+    private var currentSigningCallback: SigningCallbackImpl? = null
 
     fun loadPsbt(uri: Uri) {
         viewModelScope.launch {
@@ -85,6 +106,14 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 pythonBridge.parsePsbt(bytes)
             }
             currentPsbtBytes = bytes
+            currentNetwork = result["network"]?.toString() ?: "main"
+
+            val inputs = (result["inputs"] as? List<Map<String, Any?>>)?.map { inp ->
+                TxInput(
+                    address = inp["address"]?.toString() ?: "unknown",
+                    amount = (inp["amount"] as? Number)?.toLong() ?: 0,
+                )
+            } ?: emptyList()
 
             val outputs = (result["outputs"] as? List<Map<String, Any?>>)?.map { out ->
                 TxOutput(
@@ -110,12 +139,15 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             _state.value = AppState.TransactionReview(
+                inputs = inputs,
                 outputs = outputs,
                 fee = fee,
                 totalSent = totalSent,
                 status = result["status"]?.toString() ?: "unknown",
                 signers = signers,
                 warnings = warnings,
+                requiredSigs = (result["required_sigs"] as? Number)?.toInt() ?: 0,
+                totalSigs = (result["total_sigs"] as? Number)?.toInt() ?: 0,
             )
         } catch (e: Exception) {
             _state.value = AppState.Error("Invalid PSBT: ${e.message}")
@@ -127,7 +159,19 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         val device = trezorUsb.findTrezorDevice()
 
         if (device == null) {
-            _state.value = AppState.Signing("Connect Trezor via USB-C cable")
+            _state.value = AppState.Signing("Connect Trezor via USB-C cable", log = "Waiting for device...")
+            signingJob = viewModelScope.launch {
+                // Poll for device every second until found or cancelled
+                while (true) {
+                    delay(1000)
+                    val found = trezorUsb.findTrezorDevice()
+                    if (found != null) {
+                        signingJob = null
+                        signWithTrezor()
+                        return@launch
+                    }
+                }
+            }
             return
         }
 
@@ -139,35 +183,51 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        _state.value = AppState.Signing("Connecting to Trezor...")
+        _state.value = AppState.Signing("Connecting to Trezor...", log = "")
 
-        viewModelScope.launch {
+        signingJob = viewModelScope.launch {
+            fun log(msg: String) {
+                val current = (_state.value as? AppState.Signing)?.log ?: ""
+                _state.value = AppState.Signing(msg, log = current + msg + "\n")
+            }
+
             try {
+                log("Opening USB connection...")
                 val bridge = withContext(Dispatchers.IO) {
                     trezorUsb.openDevice(device)
                         ?: throw IllegalStateException("Failed to open USB device")
                 }
                 currentUsbBridge = bridge
 
+                log(bridge.dumpDeviceInfo())
+
+                log("Claiming interface & finding endpoints...")
+                withContext(Dispatchers.IO) { bridge.open() }
+                log("USB bridge opened OK")
+
+                log("Starting Python signing (network=$currentNetwork)...")
+                val signingCallback = SigningCallbackImpl(
+                    onStatusUpdate = { status ->
+                        viewModelScope.launch { log("Python: $status") }
+                    },
+                    onPassphraseRequest = { availableOnDevice ->
+                        _passphraseRequest.value = PassphraseRequest(
+                            availableOnDevice, currentSigningCallback!!
+                        )
+                    },
+                )
+                currentSigningCallback = signingCallback
+
                 val result = withContext(Dispatchers.IO) {
                     pythonBridge.signPsbt(
                         psbtBytes = psbt,
                         bridge = bridge,
-                        statusCallback = { status ->
-                            viewModelScope.launch {
-                                _state.value = AppState.Signing(
-                                    when (status) {
-                                        "confirm_on_device" -> "Confirm on your Trezor..."
-                                        "signing" -> "Signing transaction..."
-                                        "pin_requested" -> "Enter PIN on your Trezor..."
-                                        "passphrase_on_device" -> "Enter passphrase on your Trezor..."
-                                        else -> status
-                                    }
-                                )
-                            }
-                        },
+                        callback = signingCallback,
+                        network = currentNetwork,
                     )
                 }
+                _passphraseRequest.value = null
+                currentSigningCallback = null
 
                 when (result["status"]) {
                     "complete" -> {
@@ -189,7 +249,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             } catch (e: Exception) {
-                _state.value = AppState.Error("Signing error: ${e.message}")
+                val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
+                _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
             } finally {
                 currentUsbBridge?.close()
                 currentUsbBridge = null
@@ -218,6 +279,21 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     broadcastStatus = "Broadcast failed: ${result["message"]}",
                 )
             }
+        }
+    }
+
+    fun cancelSigning() {
+        currentSigningCallback?.cancel()
+        currentSigningCallback = null
+        _passphraseRequest.value = null
+        signingJob?.cancel()
+        signingJob = null
+        currentUsbBridge?.close()
+        currentUsbBridge = null
+        if (currentPsbtBytes != null) {
+            viewModelScope.launch { parsePsbt(currentPsbtBytes!!) }
+        } else {
+            _state.value = AppState.Home
         }
     }
 
