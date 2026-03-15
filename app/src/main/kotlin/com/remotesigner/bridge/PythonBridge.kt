@@ -3,6 +3,7 @@ package com.remotesigner.bridge
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.remotesigner.usb.UsbBridge
+import java.util.concurrent.LinkedBlockingQueue
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -75,5 +76,46 @@ class PythonBridge {
             is JSONArray -> (0 until value.length()).map { jsonToAny(value.get(it)) }
             else -> value // String, Number, Boolean
         }
+    }
+}
+
+/**
+ * Bridges Python signing callbacks to Kotlin UI.
+ *
+ * [requestPassphrase] blocks the Python thread on a [LinkedBlockingQueue]
+ * until the UI calls [submitPassphrase] or [cancel].
+ */
+class SigningCallbackImpl(
+    private val onStatusUpdate: (String) -> Unit,
+    private val onPassphraseRequest: (availableOnDevice: Boolean) -> Unit,
+) : PythonBridge.SigningCallback {
+
+    private val passphraseQueue = LinkedBlockingQueue<String?>(1)
+
+    override fun onStatus(status: String) = onStatusUpdate(status)
+
+    /**
+     * Called from Python's thread. Triggers the UI prompt, then blocks
+     * until [submitPassphrase] or [cancel] is called.
+     */
+    override fun requestPassphrase(availableOnDevice: Boolean): String {
+        onPassphraseRequest(availableOnDevice)
+        val response = passphraseQueue.take()  // blocks Python thread
+        if (response == null) {
+            throw RuntimeException("Passphrase entry cancelled")
+        }
+        return response
+    }
+
+    /** Called by the UI when the user submits a passphrase or chooses on-device. */
+    fun submitPassphrase(passphrase: String) {
+        passphraseQueue.clear()  // prevent double-submission
+        passphraseQueue.put(passphrase)
+    }
+
+    /** Called by cancelSigning() to unblock the Python thread. */
+    fun cancel() {
+        passphraseQueue.clear()
+        passphraseQueue.put(null)
     }
 }
