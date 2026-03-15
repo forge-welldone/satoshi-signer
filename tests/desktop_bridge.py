@@ -31,6 +31,13 @@ class PlaybackBridge:
         pass
 
     def close(self) -> None:
+        # No-op: trezorlib may close/reopen the transport mid-session
+        # (e.g., during passphrase handling). Use assert_consumed() after
+        # the full operation to verify all exchanges were replayed.
+        pass
+
+    def assert_consumed(self) -> None:
+        """Assert all cassette exchanges have been consumed."""
         remaining = len(self._exchanges) - self._pos
         assert remaining == 0, (
             f"Cassette has {remaining} unconsumed exchange(s) "
@@ -114,28 +121,43 @@ class RecordingBridge:
 
 
 class DesktopUsbBridge:
-    """USB bridge using trezorlib's HidHandle for desktop testing.
+    """USB bridge using trezorlib's transport handle for desktop testing.
 
-    Wraps trezorlib's tested HID handling (wirelink filtering, HID version
-    probing, nonblocking read polling) and exposes the same interface as
-    Kotlin's UsbBridge.
+    Tries WebUSB first (needed for Trezor Safe 3 on macOS), then falls back
+    to HID. Both handle types expose the same write_chunk/read_chunk interface.
     """
 
     def __init__(self) -> None:
         self._handle = None
 
     def open(self) -> None:
-        from trezorlib.transport.hid import HidTransport
         from trezorlib.models import TREZORS
 
-        devices = list(HidTransport.enumerate(models=TREZORS))
-        if not devices:
-            raise RuntimeError(
-                "No Trezor found. Is the device plugged in and unlocked?"
-            )
-        # Use the first device's handle directly
-        self._handle = devices[0].handle
-        self._handle.open()
+        # Try WebUSB first (Trezor Safe 3 on macOS only exposes WebUSB)
+        try:
+            from trezorlib.transport.webusb import WebUsbTransport
+            devices = list(WebUsbTransport.enumerate(models=TREZORS))
+            if devices:
+                self._handle = devices[0].handle
+                self._handle.open()
+                return
+        except Exception:
+            pass
+
+        # Fall back to HID
+        try:
+            from trezorlib.transport.hid import HidTransport
+            devices = list(HidTransport.enumerate(models=TREZORS))
+            if devices:
+                self._handle = devices[0].handle
+                self._handle.open()
+                return
+        except Exception:
+            pass
+
+        raise RuntimeError(
+            "No Trezor found. Is the device plugged in and unlocked?"
+        )
 
     def close(self) -> None:
         if self._handle is not None:

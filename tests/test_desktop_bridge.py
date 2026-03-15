@@ -67,7 +67,7 @@ class TestPlaybackBridge:
         with pytest.raises(AssertionError, match="expected read"):
             bridge.writeChunk(bytes.fromhex("aa" * 64))
 
-    def test_close_with_unconsumed_exchanges_raises(self):
+    def test_assert_consumed_with_unconsumed_raises(self):
         from desktop_bridge import PlaybackBridge
 
         cassette = self._make_cassette([
@@ -77,9 +77,9 @@ class TestPlaybackBridge:
         bridge = PlaybackBridge(cassette)
         bridge.open()
         with pytest.raises(AssertionError, match="unconsumed"):
-            bridge.close()
+            bridge.assert_consumed()
 
-    def test_close_after_all_consumed_ok(self):
+    def test_assert_consumed_after_all_consumed_ok(self):
         from desktop_bridge import PlaybackBridge
 
         cassette = self._make_cassette([
@@ -88,7 +88,18 @@ class TestPlaybackBridge:
         bridge = PlaybackBridge(cassette)
         bridge.open()
         bridge.writeChunk(bytes.fromhex("aa" * 64))
-        bridge.close()  # should not raise
+        bridge.assert_consumed()  # should not raise
+
+    def test_close_is_noop(self):
+        """close() does not assert — trezorlib may close mid-session."""
+        from desktop_bridge import PlaybackBridge
+
+        cassette = self._make_cassette([
+            {"dir": "w", "data": "aa" * 64},
+        ])
+        bridge = PlaybackBridge(cassette)
+        bridge.open()
+        bridge.close()  # should not raise even with unconsumed exchanges
 
     def test_exhausted_cassette_raises_on_read(self):
         from desktop_bridge import PlaybackBridge
@@ -266,7 +277,7 @@ class TestRecordingBridge:
         playback.open()
         playback.writeChunk(write_data)
         assert playback.readChunk() == read_data
-        playback.close()
+        playback.assert_consumed()
 
 
 # ---------------------------------------------------------------------------

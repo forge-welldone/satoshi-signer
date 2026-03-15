@@ -59,9 +59,9 @@ class TestSingleSigP2wpkh:
 
         assert result["status"] == "signed"
         assert "psbt" in result
-        # Verify the signed PSBT is valid base64
         signed_bytes = base64.b64decode(result["psbt"])
         assert signed_bytes.startswith(b"psbt\xff")
+        bridge.assert_consumed()
 
     def test_sign_inserts_signatures(self, bridge, cassette):
         """Signed PSBT has partial_sigs populated."""
@@ -75,6 +75,8 @@ class TestSingleSigP2wpkh:
         network = cassette["metadata"].get("network", "main")
         result = sign_psbt(psbt_bytes, bridge, network=network)
 
+        assert result["status"] == "signed"
         signed_psbt = PSBT.parse(base64.b64decode(result["psbt"]))
         for inp in signed_psbt.inputs:
             assert len(inp.partial_sigs) > 0 or inp.unknown.get(b"\x13")
+        bridge.assert_consumed()

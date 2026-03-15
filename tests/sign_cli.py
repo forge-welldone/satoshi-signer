@@ -72,17 +72,37 @@ def cmd_parse(args):
             print(f"    {s['fingerprint']}: {status}")
 
 
+def _find_trezor_transport():
+    """Find a Trezor device, trying WebUSB first then HID."""
+    from trezorlib.models import TREZORS
+
+    try:
+        from trezorlib.transport.webusb import WebUsbTransport
+        devices = list(WebUsbTransport.enumerate(models=TREZORS))
+        if devices:
+            return devices[0]
+    except Exception:
+        pass
+
+    try:
+        from trezorlib.transport.hid import HidTransport
+        devices = list(HidTransport.enumerate(models=TREZORS))
+        if devices:
+            return devices[0]
+    except Exception:
+        pass
+
+    return None
+
+
 def _query_device_info() -> dict:
     """Query Trezor model and firmware version. Returns metadata dict."""
     try:
-        from trezorlib.transport.hid import HidTransport
-        from trezorlib.models import TREZORS
         from trezorlib.client import TrezorClient
         from remotesigner.trezor_ui import AndroidTrezorUi
 
-        devices = list(HidTransport.enumerate(models=TREZORS))
-        if devices:
-            transport = devices[0]
+        transport = _find_trezor_transport()
+        if transport:
             transport.open()
             client = TrezorClient(transport, ui=AndroidTrezorUi())
             features = client.features
