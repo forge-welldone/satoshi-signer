@@ -134,6 +134,51 @@ class NostrReceiverTest {
     }
 
     @Test
+    fun receiver_connectedCount_survivesRelayFailure() {
+        // Bug: when a relay fails, onFailure decrements _connectedCount even though
+        // onOpen was never called for that connection. After reconnection attempts,
+        // the count drains to 0 even though other relays are connected.
+        val workingServer = MockWebServer()
+        workingServer.enqueue(MockResponse().withWebSocketUpgrade(
+            object : okhttp3.WebSocketListener() {}
+        ))
+        workingServer.start()
+
+        // Get a port that's definitely closed (start a server, grab its port, shut it down)
+        val failingServer = MockWebServer()
+        failingServer.start()
+        val failingPort = failingServer.port
+        failingServer.shutdown()
+
+        val receiver = NostrReceiver(
+            keyManager = keyManager,
+            onItem = {},
+            scope = CoroutineScope(Dispatchers.IO),
+        ).also { activeReceiver = it }
+
+        val workingUrl = workingServer.url("/").toString().replace("http://", "ws://")
+        val failingUrl = "ws://127.0.0.1:$failingPort"
+
+        receiver.connectToRelays(listOf(workingUrl, failingUrl))
+
+        // Wait for working relay to connect and failing relay to fail + at least one retry
+        Thread.sleep(3000)
+
+        // The working relay is connected, so count must be 1 (not 0)
+        assertEquals(
+            "Connected count should reflect actually-connected relays",
+            1, receiver.connectedCount.value,
+        )
+
+        // Verify relay statuses show correct states
+        val statuses = receiver.relayStatuses.value
+        assertEquals(RelayStatus.CONNECTED, statuses[workingUrl])
+
+        receiver.disconnect()
+        try { workingServer.shutdown() } catch (_: Exception) { }
+    }
+
+    @Test
     fun receiver_parsesEventWithSlashesInContent() {
         val received = CopyOnWriteArrayList<InboxItem>()
         val latch = CountDownLatch(1)

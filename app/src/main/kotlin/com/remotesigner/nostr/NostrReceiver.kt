@@ -5,8 +5,11 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -43,11 +46,12 @@ class NostrReceiver(
     private val webSockets = ConcurrentHashMap<String, WebSocket>()
     private val seenIds = mutableSetOf<String>()
     private val backoffMs = ConcurrentHashMap<String, Long>()
-    private val _connectedCount = MutableStateFlow(0)
     private val _relayStatuses = MutableStateFlow<Map<String, RelayStatus>>(emptyMap())
     @Volatile private var active = false
 
-    val connectedCount: StateFlow<Int> = _connectedCount.asStateFlow()
+    val connectedCount: StateFlow<Int> = _relayStatuses.map { statuses ->
+        statuses.count { it.value == RelayStatus.CONNECTED }
+    }.stateIn(scope, SharingStarted.Eagerly, 0)
     val relayStatuses: StateFlow<Map<String, RelayStatus>> = _relayStatuses.asStateFlow()
 
     fun connect() = connectToRelays(DEFAULT_RELAYS)
@@ -65,7 +69,6 @@ class NostrReceiver(
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "Connected to $url")
-                _connectedCount.update { it + 1 }
                 _relayStatuses.update { it + (url to RelayStatus.CONNECTED) }
                 backoffMs[url] = 1000L
                 sendSubscription(webSocket)
@@ -79,7 +82,6 @@ class NostrReceiver(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "Connection failed to $url: ${t.message}")
                 webSockets.remove(url)
-                _connectedCount.update { (it - 1).coerceAtLeast(0) }
                 _relayStatuses.update { it + (url to RelayStatus.ERROR) }
                 reconnect(url)
             }
@@ -87,7 +89,6 @@ class NostrReceiver(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "Closed $url: $reason")
                 webSockets.remove(url)
-                _connectedCount.update { (it - 1).coerceAtLeast(0) }
                 _relayStatuses.update { it + (url to RelayStatus.DISCONNECTED) }
             }
         })
@@ -155,6 +156,6 @@ class NostrReceiver(
         active = false
         webSockets.values.forEach { it.close(1000, "App stopped") }
         webSockets.clear()
-        _connectedCount.value = 0
+        _relayStatuses.value = emptyMap()
     }
 }
