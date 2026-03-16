@@ -104,28 +104,34 @@ fun SigningScreen(
             }
             if (log.isNotBlank()) {
                 Spacer(modifier = Modifier.height(24.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Debug Log:", style = MaterialTheme.typography.labelMedium)
-                    TextButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("debug log", log))
-                        Toast.makeText(context, "Log copied", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Copy", fontSize = 12.sp)
-                    }
+                var showLog by remember { mutableStateOf(false) }
+                TextButton(onClick = { showLog = !showLog }) {
+                    Text(if (showLog) "Hide Log" else "Show Log", fontSize = 12.sp)
                 }
-                Text(
-                    log,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                )
+                if (showLog) {
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Debug Log:", style = MaterialTheme.typography.labelMedium)
+                        TextButton(onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("debug log", log))
+                            Toast.makeText(context, "Log copied", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Text("Copy", fontSize = 12.sp)
+                        }
+                    }
+                    Text(
+                        log,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(32.dp))
         }
