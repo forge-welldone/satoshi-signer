@@ -105,6 +105,7 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **Nostr keypair is transport identity only** — Random secp256k1 key in SharedPreferences (`nostr_keys`). Not a signing key, protects nothing of value. npub displayed on Home screen as QR + copyable text for sharing with Electrum.
 - **secp256k1-kmp ECDH for NIP-04** — `Secp256k1.get().ecdh(priv, pub)` returns the raw 32-byte x-coordinate of the ECDH point (not SHA-256 hashed), used directly as the AES-256-CBC key per NIP-04 convention. The 0x02 prefix is always used for x-only pubkeys (even parity assumption — works because ECDH result only depends on x-coordinate).
 - **Inbox is in-memory** — `_inboxItems: MutableStateFlow<List<InboxItem>>` in ViewModel, separate from the navigation `_state`. Killed process loses inbox; events are re-fetchable from relay within 24h. Deduplication by Nostr event ID.
+- **Passphrase input disables keyboard learning** — The on-phone passphrase `OutlinedTextField` uses `KeyboardType.Password` + `autoCorrect = false` so the IME never learns, suggests, or autocompletes passphrases. `PasswordVisualTransformation` alone only masks display — `KeyboardOptions` are required to control IME behavior.
 
 ## Development Practices
 

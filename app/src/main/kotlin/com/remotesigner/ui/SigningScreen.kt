@@ -21,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -130,6 +132,10 @@ private fun PassphraseDialog(
                         onValueChange = { passphrase = it },
                         label = { Text("Passphrase") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            autoCorrect = false,
+                        ),
                         visualTransformation = if (passwordVisible)
                             VisualTransformation.None
                         else
@@ -143,18 +149,7 @@ private fun PassphraseDialog(
                     )
                 } else {
                     Text("Choose where to enter your passphrase:")
-                }
-            }
-        },
-        confirmButton = {
-            if (showTextField) {
-                Button(onClick = {
-                    request.callback.submitPassphrase(passphrase)
-                }) {
-                    Text("Submit")
-                }
-            } else {
-                Column {
+                    Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = { request.callback.submitPassphrase("") },
                         modifier = Modifier.fillMaxWidth(),
@@ -168,6 +163,15 @@ private fun PassphraseDialog(
                     ) {
                         Text("Enter on phone")
                     }
+                }
+            }
+        },
+        confirmButton = {
+            if (showTextField) {
+                Button(onClick = {
+                    request.callback.submitPassphrase(passphrase)
+                }) {
+                    Text("Submit")
                 }
             }
         },
