@@ -27,8 +27,10 @@ fun AppRoot(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val passphraseRequest by viewModel.passphraseRequest.collectAsStateWithLifecycle()
+    val accountPathRequest by viewModel.accountPathRequest.collectAsStateWithLifecycle()
     val inboxItems by viewModel.inboxItems.collectAsStateWithLifecycle()
     val relayCount by viewModel.relayConnectedCount.collectAsStateWithLifecycle()
+    val relayStatuses by viewModel.relayStatuses.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var pendingSavePsbt by remember { mutableStateOf<ByteArray?>(null) }
@@ -56,6 +58,7 @@ fun AppRoot(
         is AppState.Home -> HomeScreen(
             npub = viewModel.keyManager.getNpub(),
             relayCount = relayCount,
+            relayStatuses = relayStatuses,
             inboxItems = inboxItems,
             onPsbtSelected = { uri -> viewModel.loadPsbt(uri) },
             onSignInboxItem = { item -> viewModel.signInboxItem(item) },
@@ -70,6 +73,7 @@ fun AppRoot(
             message = s.message,
             log = s.log,
             passphraseRequest = passphraseRequest,
+            accountPathRequest = accountPathRequest,
             onCancel = { viewModel.cancelSigning() },
         )
         is AppState.Result -> ResultScreen(

@@ -24,12 +24,17 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.RelayStatus
 
 @Composable
 fun HomeScreen(
     npub: String,
     relayCount: Int,
+    relayStatuses: Map<String, RelayStatus>,
     inboxItems: List<InboxItem>,
     onPsbtSelected: (Uri) -> Unit,
     onSignInboxItem: (InboxItem) -> Unit,
@@ -95,8 +100,9 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Relay status
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Relay status (tappable to expand)
+            var relaysExpanded by remember { mutableStateOf(false) }
+            TextButton(onClick = { relaysExpanded = !relaysExpanded }) {
                 Text(
                     "\u25CF ",
                     color = if (relayCount > 0)
@@ -110,6 +116,14 @@ fun HomeScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    if (relaysExpanded) " \u25B2" else " \u25BC",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (relaysExpanded) {
+                RelayList(relayStatuses)
             }
 
             // Inbox
@@ -120,6 +134,42 @@ fun HomeScreen(
             )
 
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun RelayList(statuses: Map<String, RelayStatus>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            statuses.forEach { (url, status) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        url.removePrefix("wss://"),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        when (status) {
+                            RelayStatus.CONNECTED -> "\u25CF connected"
+                            RelayStatus.CONNECTING -> "\u25CB connecting..."
+                            RelayStatus.DISCONNECTED -> "\u25CB disconnected"
+                            RelayStatus.ERROR -> "\u25CF error"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when (status) {
+                            RelayStatus.CONNECTED -> MaterialTheme.colorScheme.primary
+                            RelayStatus.CONNECTING -> MaterialTheme.colorScheme.onSurfaceVariant
+                            RelayStatus.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                            RelayStatus.ERROR -> MaterialTheme.colorScheme.error
+                        },
+                    )
+                }
+            }
         }
     }
 }

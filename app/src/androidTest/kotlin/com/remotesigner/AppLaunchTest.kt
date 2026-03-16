@@ -20,6 +20,7 @@ class AppLaunchTest {
                 HomeScreen(
                     npub = "npub1test",
                     relayCount = 0,
+                    relayStatuses = emptyMap(),
                     inboxItems = emptyList(),
                     onPsbtSelected = {},
                     onSignInboxItem = {},
@@ -37,6 +38,7 @@ class AppLaunchTest {
                 HomeScreen(
                     npub = "npub1test",
                     relayCount = 0,
+                    relayStatuses = emptyMap(),
                     inboxItems = emptyList(),
                     onPsbtSelected = {},
                     onSignInboxItem = {},

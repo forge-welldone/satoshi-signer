@@ -71,6 +71,10 @@ data class PassphraseRequest(
     val callback: SigningCallbackImpl,
 )
 
+data class AccountPathRequest(
+    val callback: SigningCallbackImpl,
+)
+
 class SignerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow<AppState>(AppState.Home)
@@ -85,6 +89,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     private var signingJob: Job? = null
     private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
     val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest.asStateFlow()
+    private val _accountPathRequest = MutableStateFlow<AccountPathRequest?>(null)
+    val accountPathRequest: StateFlow<AccountPathRequest?> = _accountPathRequest.asStateFlow()
     private var currentSigningCallback: SigningCallbackImpl? = null
 
     // --- Nostr inbox ---
@@ -100,6 +106,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     val relayConnectedCount: StateFlow<Int> = nostrReceiver.connectedCount
+    val relayStatuses: StateFlow<Map<String, com.remotesigner.nostr.RelayStatus>> = nostrReceiver.relayStatuses
 
     private fun handleInboxEvent(item: InboxItem) {
         viewModelScope.launch {
@@ -317,6 +324,12 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     },
                     onPassphraseSubmitted = { _passphraseRequest.value = null },
+                    onAccountPathRequest = {
+                        _accountPathRequest.value = AccountPathRequest(
+                            currentSigningCallback!!
+                        )
+                    },
+                    onAccountPathSubmitted = { _accountPathRequest.value = null },
                 ).also { currentSigningCallback = it }
             } else {
                 null
@@ -331,6 +344,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
             _passphraseRequest.value = null
+            _accountPathRequest.value = null
             currentSigningCallback = null
 
             when (result["status"]) {
@@ -360,6 +374,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
         } finally {
             _passphraseRequest.value = null
+            _accountPathRequest.value = null
             currentSigningCallback = null
             bridge.close()
             currentUsbBridge = null
@@ -394,6 +409,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         currentSigningCallback?.cancel()
         currentSigningCallback = null
         _passphraseRequest.value = null
+        _accountPathRequest.value = null
         signingJob?.cancel()
         signingJob = null
         currentUsbBridge?.close()

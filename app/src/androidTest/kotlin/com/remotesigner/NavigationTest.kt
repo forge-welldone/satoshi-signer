@@ -29,6 +29,7 @@ class NavigationTest {
                     is AppState.Home -> HomeScreen(
                         npub = "npub1test",
                         relayCount = 0,
+                        relayStatuses = emptyMap(),
                         inboxItems = emptyList(),
                         onPsbtSelected = {},
                         onSignInboxItem = {},
@@ -43,6 +44,7 @@ class NavigationTest {
                         message = current.message,
                         log = current.log,
                         passphraseRequest = null,
+                        accountPathRequest = null,
                         onCancel = {},
                     )
                     is AppState.Result -> ResultScreen(

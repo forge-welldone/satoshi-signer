@@ -3,6 +3,8 @@ package com.remotesigner
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.RelayStatus
+import com.remotesigner.ui.HomeScreen
 import com.remotesigner.ui.InboxSection
 import com.remotesigner.ui.theme.SatoshiSignerTheme
 import org.junit.Rule
@@ -89,5 +91,60 @@ class InboxScreenTest {
 
         composeTestRule.onNodeWithText("Sign").performClick()
         assert(signedItem != null) { "onSign should have been called" }
+    }
+
+    @Test
+    fun homeScreen_relayStatus_showsConnectedCount() {
+        val relays = mapOf(
+            "wss://nos.lol" to RelayStatus.CONNECTED,
+            "wss://relay.damus.io" to RelayStatus.CONNECTED,
+            "wss://relay.primal.net" to RelayStatus.ERROR,
+        )
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                HomeScreen(
+                    npub = "npub1test",
+                    relayCount = 2,
+                    relayStatuses = relays,
+                    inboxItems = emptyList(),
+                    onPsbtSelected = {},
+                    onSignInboxItem = {},
+                    onDeleteInboxItem = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("2 relays connected").assertIsDisplayed()
+    }
+
+    @Test
+    fun homeScreen_relayList_expandsOnTap() {
+        val relays = mapOf(
+            "wss://nos.lol" to RelayStatus.CONNECTED,
+            "wss://relay.damus.io" to RelayStatus.ERROR,
+        )
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                HomeScreen(
+                    npub = "npub1test",
+                    relayCount = 1,
+                    relayStatuses = relays,
+                    inboxItems = emptyList(),
+                    onPsbtSelected = {},
+                    onSignInboxItem = {},
+                    onDeleteInboxItem = {},
+                )
+            }
+        }
+
+        // Relay details not visible initially
+        composeTestRule.onNodeWithText("nos.lol").assertDoesNotExist()
+
+        // Tap the relay status to expand
+        composeTestRule.onNodeWithText("1 relay connected").performClick()
+
+        // Now relay details are visible
+        composeTestRule.onNodeWithText("nos.lol").assertIsDisplayed()
+        composeTestRule.onNodeWithText("relay.damus.io").assertIsDisplayed()
     }
 }

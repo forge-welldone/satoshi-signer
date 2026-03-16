@@ -2,6 +2,8 @@ package com.remotesigner.nostr
 
 enum class InboxStatus { PENDING, SIGNING, SIGNED, FAILED }
 
+enum class RelayStatus { CONNECTING, CONNECTED, DISCONNECTED, ERROR }
+
 data class InboxItem(
     val id: String,
     val psbtBytes: ByteArray,
