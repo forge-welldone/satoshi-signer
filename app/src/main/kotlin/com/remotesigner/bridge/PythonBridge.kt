@@ -27,7 +27,7 @@ class PythonBridge {
     fun signPsbt(
         psbtBytes: ByteArray,
         bridge: SigningBridge,
-        callback: SigningCallback,
+        callback: SigningCallback?,
         network: String = "main",
     ): Map<String, Any?> {
         val result = signerModule.callAttr(

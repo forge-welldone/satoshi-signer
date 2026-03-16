@@ -37,6 +37,7 @@ class PlaybackBridge(cassetteJson: JSONObject) : SigningBridge {
     override fun close() {}
 
     override fun writeChunk(data: ByteArray) {
+
         check(pos < exchanges.size) { "Cassette exhausted at position $pos (total ${exchanges.size})" }
         val expected = exchanges[pos]
         check(expected.dir == "w") { "Expected write at pos $pos, got read" }
@@ -45,14 +46,18 @@ class PlaybackBridge(cassetteJson: JSONObject) : SigningBridge {
             "Write mismatch at pos $pos:\n  expected: ${expected.data.take(32)}...\n  actual:   ${actualHex.take(32)}..."
         }
         pos++
+
     }
 
     override fun readChunk(): ByteArray {
+
         check(pos < exchanges.size) { "Cassette exhausted at position $pos (total ${exchanges.size})" }
         val expected = exchanges[pos]
         check(expected.dir == "r") { "Expected read at pos $pos, got write" }
         pos++
-        return expected.data.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val result = expected.data.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        return result
     }
 
     fun assertConsumed() {

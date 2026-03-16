@@ -226,49 +226,50 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     internal fun signWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
         _state.value = AppState.Signing("Signing...", log = "")
         signingJob = viewModelScope.launch {
-            doSignWithBridge(bridge, psbtBytes, network)
+            doSignWithBridge(bridge, psbtBytes, network, withPassphraseUI = false)
         }
     }
 
-    private suspend fun doSignWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
+    private suspend fun doSignWithBridge(
+        bridge: SigningBridge,
+        psbtBytes: ByteArray,
+        network: String,
+        withPassphraseUI: Boolean = true,
+    ) {
         fun log(msg: String) {
-            android.util.Log.d("SignerViewModel", "doSignWithBridge: $msg")
             val current = (_state.value as? AppState.Signing)?.log ?: ""
             _state.value = AppState.Signing(msg, log = current + msg + "\n")
         }
 
         try {
-            android.util.Log.d("SignerViewModel", "doSignWithBridge: ENTERED, bridge=${bridge::class.simpleName}")
             log("Starting Python signing (network=$network)...")
-            val signingCallback = SigningCallbackImpl(
-                onStatusUpdate = { status ->
-                    viewModelScope.launch { log("Python: $status") }
-                },
-                onPassphraseRequest = { availableOnDevice ->
-                    _passphraseRequest.value = PassphraseRequest(
-                        availableOnDevice, currentSigningCallback!!
-                    )
-                },
-                onPassphraseSubmitted = { _passphraseRequest.value = null },
-            )
-            currentSigningCallback = signingCallback
 
-            android.util.Log.d("SignerViewModel", "doSignWithBridge: calling pythonBridge.signPsbt...")
+            // When withPassphraseUI is false (tests), pass null callback to Python
+            // so AndroidTrezorUi falls back to on-device passphrase automatically.
+            // When true (production), create a blocking callback for the passphrase dialog.
+            val signingCallback: SigningCallbackImpl? = if (withPassphraseUI) {
+                SigningCallbackImpl(
+                    onStatusUpdate = { status ->
+                        viewModelScope.launch { log("Python: $status") }
+                    },
+                    onPassphraseRequest = { availableOnDevice ->
+                        _passphraseRequest.value = PassphraseRequest(
+                            availableOnDevice, currentSigningCallback!!
+                        )
+                    },
+                    onPassphraseSubmitted = { _passphraseRequest.value = null },
+                ).also { currentSigningCallback = it }
+            } else {
+                null
+            }
+
             val result = withContext(Dispatchers.IO) {
-                try {
-                    android.util.Log.d("SignerViewModel", "doSignWithBridge: on IO thread, calling signPsbt now")
-                    val r = pythonBridge.signPsbt(
-                        psbtBytes = psbtBytes,
-                        bridge = bridge,
-                        callback = signingCallback,
-                        network = network,
-                    )
-                    android.util.Log.d("SignerViewModel", "doSignWithBridge: signPsbt returned: ${r["status"]}")
-                    r
-                } catch (e: Exception) {
-                    android.util.Log.e("SignerViewModel", "doSignWithBridge: signPsbt THREW", e)
-                    throw e
-                }
+                pythonBridge.signPsbt(
+                    psbtBytes = psbtBytes,
+                    bridge = bridge,
+                    callback = signingCallback,
+                    network = network,
+                )
             }
             _passphraseRequest.value = null
             currentSigningCallback = null
