@@ -16,7 +16,7 @@ The icon represents the app's core function: a hardware secure element (Trezor) 
 ### Glyph: Minimal Chip (dimensions in dp, on 108×108dp canvas)
 
 - **Chip body:** 44×44dp rounded rectangle, corner radius 8dp, centered at `(54, 54)`
-- **Stroke weight:** 2.5dp for chip body, 2dp for traces and checkmark
+- **Stroke weight:** 2.5dp for chip body, 2dp for traces, 3dp for checkmark
 - **Connector traces:** 3 per side (12 total), 10dp long, extending outward from the chip body
   - Left/right traces at y = 44, 54, 64 (10dp spacing)
   - Top/bottom traces at x = 44, 54, 64 (10dp spacing)
