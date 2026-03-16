@@ -8,3 +8,4 @@ local.properties
 .venv/
 __pycache__/
 *.pyc
+.worktrees/
