@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -60,7 +61,7 @@ class NostrReceiver(
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "Connected to $url")
-                _connectedCount.value++
+                _connectedCount.update { it + 1 }
                 backoffMs[url] = 1000L
                 sendSubscription(webSocket)
             }
@@ -72,14 +73,14 @@ class NostrReceiver(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "Connection failed to $url: ${t.message}")
                 webSockets.remove(url)
-                _connectedCount.value = (_connectedCount.value - 1).coerceAtLeast(0)
+                _connectedCount.update { (it - 1).coerceAtLeast(0) }
                 reconnect(url)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "Closed $url: $reason")
                 webSockets.remove(url)
-                _connectedCount.value = (_connectedCount.value - 1).coerceAtLeast(0)
+                _connectedCount.update { (it - 1).coerceAtLeast(0) }
             }
         })
         webSockets[url] = ws
