@@ -4,10 +4,14 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import com.remotesigner.ui.AppRoot
 import com.remotesigner.ui.theme.SatoshiSignerTheme
+import com.remotesigner.viewmodel.SignerViewModel
 
 class MainActivity : ComponentActivity() {
+    private val viewModel: SignerViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -15,9 +19,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SatoshiSignerTheme {
-                AppRoot(intentPsbtBytes = psbtBytes)
+                AppRoot(viewModel = viewModel, intentPsbtBytes = psbtBytes)
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.startNostrReceiver()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.stopNostrReceiver()
     }
 
     override fun onNewIntent(intent: Intent) {

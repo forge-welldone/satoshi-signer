@@ -26,7 +26,14 @@ class NavigationTest {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 when (val current = state) {
-                    is AppState.Home -> HomeScreen(onPsbtSelected = {})
+                    is AppState.Home -> HomeScreen(
+                        npub = "npub1test",
+                        relayCount = 0,
+                        inboxItems = emptyList(),
+                        onPsbtSelected = {},
+                        onSignInboxItem = {},
+                        onDeleteInboxItem = {},
+                    )
                     is AppState.TransactionReview -> TransactionReviewScreen(
                         state = current,
                         onSign = {},

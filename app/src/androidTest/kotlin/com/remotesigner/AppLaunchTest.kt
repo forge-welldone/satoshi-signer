@@ -17,7 +17,14 @@ class AppLaunchTest {
     fun homeScreen_displaysTitle() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
-                HomeScreen(onPsbtSelected = {})
+                HomeScreen(
+                    npub = "npub1test",
+                    relayCount = 0,
+                    inboxItems = emptyList(),
+                    onPsbtSelected = {},
+                    onSignInboxItem = {},
+                    onDeleteInboxItem = {},
+                )
             }
         }
         composeTestRule.onNodeWithText("Satoshi Signer").assertIsDisplayed()
@@ -27,7 +34,14 @@ class AppLaunchTest {
     fun homeScreen_displaysOpenButton() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
-                HomeScreen(onPsbtSelected = {})
+                HomeScreen(
+                    npub = "npub1test",
+                    relayCount = 0,
+                    inboxItems = emptyList(),
+                    onPsbtSelected = {},
+                    onSignInboxItem = {},
+                    onDeleteInboxItem = {},
+                )
             }
         }
         composeTestRule.onNodeWithText("Open PSBT File").assertIsDisplayed()
