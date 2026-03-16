@@ -6,6 +6,16 @@
 
 An Android app that imports unsigned Bitcoin PSBTs (Partially Signed Bitcoin Transactions), signs them with a Trezor hardware wallet connected via USB-C, and broadcasts the signed transaction to the Bitcoin network.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/main_screen.jpg" width="250" alt="Home screen with Nostr QR code, file picker, and inbox">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/tx_overview.jpg" width="250" alt="Transaction review showing inputs, outputs, change, and fee">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/passphrase_required.jpg" width="250" alt="Passphrase entry dialog with Trezor, phone, and NFC options">
+</p>
+
 ## Why
 
 Electrum requires a desktop computer to interact with hardware wallets. No existing Android app supports the full workflow of importing external PSBTs and signing them with a Trezor via USB. Satoshi Signer fills this gap — create unsigned transactions in Electrum on a remote machine, transfer the PSBT file to your phone, sign with Trezor, and broadcast. No laptop needed.
@@ -13,8 +23,10 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 ## Workflow
 
 1. Create unsigned transaction in Electrum on a remote machine
-2. Send the `.psbt` file to your phone (email, cloud storage, messenger, etc.)
-3. Open the file with Satoshi Signer
+2. Send the PSBT to your phone:
+   - **Via Nostr** — click "Send to Signer" in Electrum (requires the [Nostr Signer plugin](#electrum-plugin-nostr-signer))
+   - **Via file** — send the `.psbt` file by email, cloud storage, messenger, etc.
+3. Open the PSBT in Satoshi Signer (from inbox or file picker)
 4. Review transaction details: destinations, change outputs, fee, multisig status
 5. Connect Trezor via USB-C OTG cable
 6. Sign on the Trezor
@@ -29,6 +41,7 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 - **Manual broadcast fallback** — copy raw hex if API broadcast fails
 - **PSBT export** for partially-signed multisig transactions (via Android share sheet)
 - **Intent filter** — open `.psbt` files directly from file managers and email apps
+- **Nostr PSBT delivery** — receive PSBTs from Electrum over Nostr relays (NIP-04 encrypted). No file transfer needed — just click "Send to Signer" in Electrum. See [Electrum Plugin](#electrum-plugin-nostr-signer) below.
 - **NFC passphrase import** — tap a YubiKey or NDEF tag to enter your Trezor passphrase instead of typing it on the phone keyboard. Optional — the NFC option only appears on devices with NFC hardware.
 
 ## Architecture
@@ -209,6 +222,11 @@ app/src/main/
     ├── xml/usb_device_filter.xml   # Trezor USB vendor ID filter
     └── xml/file_paths.xml          # FileProvider for PSBT export
 
+nostr_signer/                          # Electrum plugin (see below)
+├── manifest.json                      # Plugin metadata (v0.2.1)
+├── nostr_signer.py                    # Standalone NIP-04 crypto
+└── qt.py                              # Electrum Qt UI hooks + relay publishing
+
 tests/
 ├── desktop_bridge.py               # DesktopUsbBridge, RecordingBridge, PlaybackBridge
 ├── sign_cli.py                     # CLI for desktop signing + cassette recording
@@ -243,6 +261,66 @@ tests/
 - Signing works fully offline; only broadcasting requires network
 - The app is stateless — no databases, no wallet storage, no caching
 
+## Electrum Plugin (Nostr Signer)
+
+The `nostr_signer/` directory contains an Electrum plugin that sends PSBTs from Electrum to the Satoshi Signer app over Nostr relays — no file transfer needed.
+
+### How It Works
+
+1. Create a transaction in Electrum as usual
+2. Click **Send to Signer** in the transaction dialog
+3. The plugin encrypts the PSBT with [NIP-04](https://github.com/nostr-protocol/nips/blob/master/04.md) and publishes a kind 4 event to your configured Nostr relays
+4. The Satoshi Signer app receives the event, decrypts it, and displays the PSBT in its inbox
+5. Sign on the Trezor and broadcast from the app
+
+One-way push: Electrum sends, the app receives and signs.
+
+### Requirements
+
+- **Electrum 4.6+** (uses bundled `electrum_aionostr` and `electrum_ecc` — no extra dependencies)
+- **Satoshi Signer** app installed on your phone
+
+### Installation
+
+Package as a zip and import via **Tools → Plugins → Add Plugin**:
+
+```bash
+# From the Electrum source tree
+./contrib/make_plugin /path/to/remote_signer/nostr_signer
+```
+
+For development, symlink into Electrum's plugin directory:
+
+```bash
+ln -s "$(pwd)/nostr_signer" /path/to/electrum/electrum/plugins/nostr_signer
+```
+
+### Setup
+
+1. Open the Satoshi Signer app — your **npub** is displayed on the Home screen as a QR code
+2. In Electrum: **Tools → Plugins → Nostr Signer → Settings**
+3. Paste the npub (scan the QR or copy the text)
+4. Relays are shared with Electrum's Nostr settings (no separate configuration)
+
+### Plugin Structure
+
+```
+nostr_signer/
+    manifest.json       # Plugin metadata
+    __init__.py         # Package marker
+    nostr_signer.py     # Standalone NIP-04 crypto (testable without Electrum)
+    qt.py               # Electrum Qt plugin: UI hooks, relay publishing
+```
+
+- `qt.py` — the Electrum entry point. Uses `electrum_aionostr.Manager` for relay connections and `PrivateKey.encrypt_message()` for NIP-04 encryption
+- `nostr_signer.py` — standalone reference implementation using `embit` + `pyaes`, testable with plain pytest
+
+### Testing
+
+```bash
+python -m pytest tests/test_nostr_signer.py -v
+```
+
 ## Known Limitations
 
 - **Android only** — iOS does not expose USB HID to apps (Trezor Safe 7 with Bluetooth would be needed)
@@ -252,7 +330,6 @@ tests/
 
 ## Future Enhancements
 
-- Nostr-based PSBT transfer from remote machine
 - QR code scanning for PSBT import
 - User-assigned labels for multisig signer fingerprints
 - Ledger support (Bluetooth transport)
