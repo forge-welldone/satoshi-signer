@@ -7,6 +7,9 @@ navigation-compose = "2.8.5"
 lifecycle = "2.8.7"
 junit = "4.13.2"
 test-runner = "1.6.2"
+okhttp = "4.12.0"
+secp256k1-kmp = "0.22.0"
+zxing = "3.5.3"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -22,6 +25,10 @@ compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 test-runner = { group = "androidx.test", name = "runner", version.ref = "test-runner" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
+secp256k1-kmp = { group = "fr.acinq.secp256k1", name = "secp256k1-kmp-jni-android", version.ref = "secp256k1-kmp" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
