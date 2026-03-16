@@ -17,18 +17,15 @@ class Nip04Test {
     @Test
     fun decrypt_roundTrip_recoversPlaintext() {
         val alicePriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val alicePub = secp.pubkeyCreate(alicePriv)         // 65-byte uncompressed (04 || x || y)
-        val alicePubXOnly = alicePub.copyOfRange(1, 33)     // 32-byte x-coordinate
+        val alicePubXOnly = secp.pubkeyCreate(alicePriv).copyOfRange(1, 33)
 
         val bobPriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val bobPub = secp.pubkeyCreate(bobPriv)
-        val bobPubXOnly = bobPub.copyOfRange(1, 33)
+        val bobPubXOnly = secp.pubkeyCreate(bobPriv).copyOfRange(1, 33)
 
         val plaintext = """{"tx": "cHNidFF...", "label": "Test payment"}"""
 
-        // Alice encrypts to Bob using NIP-04 format
-        // NIP-04 convention: always use 0x02 prefix for x-only pubkeys (assumes even parity)
-        val sharedSecret = secp.ecdh(alicePriv, byteArrayOf(0x02) + bobPubXOnly)
+        // Alice encrypts to Bob using NIP-04 shared secret (raw x-coordinate)
+        val sharedSecret = Nip04.computeSharedSecret(alicePriv, bobPubXOnly)
         val iv = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(sharedSecret, "AES"), IvParameterSpec(iv))
@@ -42,18 +39,17 @@ class Nip04Test {
     }
 
     @Test
-    fun decrypt_ecdhIsSymmetric() {
-        // Verify that ECDH(alice_priv, 02||bob_x) == ECDH(bob_priv, 02||alice_x)
-        // Both sides use 0x02 prefix per NIP-04 convention (even parity assumption).
-        // This works because secp256k1 ECDH only uses the x-coordinate of the result.
+    fun decrypt_sharedSecretIsSymmetric() {
+        // NIP-04 shared secret (raw x-coordinate via pubKeyTweakMul) must be
+        // symmetric: computeSharedSecret(alice, bob_x) == computeSharedSecret(bob, alice_x)
         val alicePriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val alicePubXOnly = secp.pubkeyCreate(alicePriv).copyOfRange(1, 33)
 
         val bobPriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val bobPubXOnly = secp.pubkeyCreate(bobPriv).copyOfRange(1, 33)
 
-        val secret1 = secp.ecdh(alicePriv, byteArrayOf(0x02) + bobPubXOnly)
-        val secret2 = secp.ecdh(bobPriv, byteArrayOf(0x02) + alicePubXOnly)
+        val secret1 = Nip04.computeSharedSecret(alicePriv, bobPubXOnly)
+        val secret2 = Nip04.computeSharedSecret(bobPriv, alicePubXOnly)
         assertEquals(secret1.toList(), secret2.toList())
     }
 

@@ -11,10 +11,11 @@ import javax.crypto.spec.SecretKeySpec
  *
  * Wire format: base64(ciphertext) + "?iv=" + base64(iv)
  * Encryption: AES-256-CBC with PKCS5 padding.
- * Shared secret: x-coordinate of ECDH(our_privkey, sender_pubkey).
+ * Shared secret: raw x-coordinate of the ECDH shared point.
  *
- * secp256k1-kmp's ecdh() returns the raw 32-byte x-coordinate
- * of the shared point, which is exactly what NIP-04 expects.
+ * IMPORTANT: secp256k1-kmp's ecdh() returns SHA-256(compressed_shared_point),
+ * NOT the raw x-coordinate. NIP-04 requires the raw x-coordinate. We use
+ * pubKeyTweakMul (point multiplication) instead and extract x ourselves.
  */
 object Nip04 {
 
@@ -42,11 +43,15 @@ object Nip04 {
         return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     }
 
-    private fun computeSharedSecret(privkey: ByteArray, xOnlyPubkey: ByteArray): ByteArray {
-        // NIP-04 convention: reconstruct compressed pubkey with 02 prefix (even parity).
-        // This works because secp256k1 ECDH only uses the x-coordinate of the shared point,
-        // so the y-parity of the input pubkey doesn't affect the result.
+    fun computeSharedSecret(privkey: ByteArray, xOnlyPubkey: ByteArray): ByteArray {
+        // NIP-04: shared secret is the raw x-coordinate of privkey * pubkey.
+        // We use pubKeyTweakMul (point multiplication) instead of ecdh() because
+        // secp256k1-kmp's ecdh() returns SHA-256(compressed_point), not the raw x.
+        // Using 0x02 prefix is safe: even if the real pubkey has odd y, the resulting
+        // shared point's x-coordinate is the same (negation only flips y).
         val compressedPubkey = byteArrayOf(0x02) + xOnlyPubkey
-        return secp.ecdh(privkey, compressedPubkey)
+        val sharedPoint = secp.pubKeyTweakMul(compressedPubkey, privkey)
+        // pubKeyTweakMul returns 65-byte uncompressed key: 04 || x (32) || y (32)
+        return sharedPoint.copyOfRange(1, 33)
     }
 }

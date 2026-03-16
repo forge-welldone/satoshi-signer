@@ -45,10 +45,9 @@ data class NostrEvent(
      * Verify that the event ID is SHA-256 of the serialized event.
      * Per NIP-01: id = sha256([0, pubkey, created_at, kind, tags, content])
      *
-     * Note: This relies on org.json's toString() for canonical serialization.
-     * Android's JSONArray preserves order, but numeric formatting edge cases
-     * could cause false negatives. If this rejects valid events from real relays,
-     * consider relaxing to a warning log rather than a hard rejection.
+     * Note: Android's org.json escapes forward slashes (/ → \/) in toString(),
+     * but NIP-01 canonical serialization requires unescaped slashes. We undo
+     * that escaping before hashing. Base64 content (NIP-04) is full of slashes.
      */
     private fun verifyId(raw: JSONObject): Boolean {
         return try {
@@ -60,8 +59,10 @@ data class NostrEvent(
                 put(raw.getJSONArray("tags"))
                 put(content)
             }
+            // org.json escapes / as \/ — NIP-01 requires unescaped slashes
+            val canonical = serialized.toString().replace("\\/", "/")
             val hash = MessageDigest.getInstance("SHA-256")
-                .digest(serialized.toString().toByteArray(Charsets.UTF_8))
+                .digest(canonical.toByteArray(Charsets.UTF_8))
             hash.toHex() == id
         } catch (_: Exception) {
             Log.w("NostrEvent", "ID verification failed for event $id, accepting anyway")
