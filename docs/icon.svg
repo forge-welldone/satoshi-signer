@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 108 108">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D97706"/>
+      <stop offset="1" stop-color="#E11D48"/>
+    </linearGradient>
+    <clipPath id="circle">
+      <circle cx="54" cy="54" r="48"/>
+    </clipPath>
+  </defs>
+  <rect width="108" height="108" rx="24" fill="url(#bg)"/>
+  <!-- Chip body -->
+  <path d="M40,32 L68,32 Q76,32 76,40 L76,68 Q76,76 68,76 L40,76 Q32,76 32,68 L32,40 Q32,32 40,32 Z"
+        stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Left traces -->
+  <line x1="32" y1="44" x2="22" y2="44" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="32" y1="54" x2="22" y2="54" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="32" y1="64" x2="22" y2="64" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <!-- Right traces -->
+  <line x1="76" y1="44" x2="86" y2="44" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="76" y1="54" x2="86" y2="54" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="76" y1="64" x2="86" y2="64" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <!-- Top traces -->
+  <line x1="44" y1="32" x2="44" y2="22" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="54" y1="32" x2="54" y2="22" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="64" y1="32" x2="64" y2="22" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <!-- Bottom traces -->
+  <line x1="44" y1="76" x2="44" y2="86" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="54" y1="76" x2="54" y2="86" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="64" y1="76" x2="64" y2="86" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <!-- Checkmark -->
+  <path d="M43,54 L50,61 L67,44" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

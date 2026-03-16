@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.svg" width="128" height="128" alt="Satoshi Signer icon">
+</p>
+
 # Satoshi Signer
 
 An Android app that imports unsigned Bitcoin PSBTs (Partially Signed Bitcoin Transactions), signs them with a Trezor hardware wallet connected via USB-C, and broadcasts the signed transaction to the Bitcoin network.
@@ -25,6 +29,7 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 - **Manual broadcast fallback** — copy raw hex if API broadcast fails
 - **PSBT export** for partially-signed multisig transactions (via Android share sheet)
 - **Intent filter** — open `.psbt` files directly from file managers and email apps
+- **NFC passphrase import** — tap a YubiKey or NDEF tag to enter your Trezor passphrase instead of typing it on the phone keyboard. Optional — the NFC option only appears on devices with NFC hardware.
 
 ## Architecture
 
@@ -55,6 +60,27 @@ Kotlin/Jetpack Compose (thin shell)     Python backend (via Chaquopy)
 - **Android 9.0+** (API 28) with USB Host support
 
 Other Trezor models with USB-C should work but are untested. Models requiring host-side PIN entry (Model One with old firmware) are not supported.
+
+## NFC Passphrase Import
+
+During signing, the Trezor may prompt for a passphrase. Satoshi Signer offers three entry methods:
+
+1. **Enter on Trezor** — type the passphrase on the Trezor's own screen
+2. **Enter on phone** — type on the phone keyboard (IME learning disabled)
+3. **Read from NFC tag** — tap a YubiKey or generic NDEF tag to the back of the phone
+
+The NFC option is useful for long or complex passphrases that are painful to type on a phone keyboard during every signing session.
+
+### Compatible NFC Tags
+
+| Tag Type | How it works | Security |
+|----------|-------------|----------|
+| **YubiKey** (static password slot via NDEF) | Passphrase stored in secure element, emitted on tap | Can't be cloned; emits to any NFC reader |
+| **Generic NDEF tag** (NTAG, Mifare, etc.) | Passphrase stored as plaintext NDEF text record | Trivially cloneable by anyone with a phone |
+
+The app reads whatever NDEF text payload the tag emits — it does not distinguish between tag types. Programming the tag is the user's responsibility (YubiKey Manager for YubiKeys, NFC Tools or similar for generic tags).
+
+**Security trade-off:** NFC moves the passphrase from "something you know" to "something you have." An attacker still needs the Trezor + PIN + phone + NFC tag to sign.
 
 ## Building
 

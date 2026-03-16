@@ -10,3 +10,4 @@ __pycache__/
 *.pyc
 .worktrees/
 nostr_signer-*.zip
+.superpowers/
