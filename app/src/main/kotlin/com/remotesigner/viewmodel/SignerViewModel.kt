@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
 import com.remotesigner.bridge.SigningCallbackImpl
+import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nostr.InboxItem
 import com.remotesigner.nostr.InboxStatus
 import com.remotesigner.nostr.NostrKeyManager
@@ -91,6 +92,30 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest.asStateFlow()
     private val _accountPathRequest = MutableStateFlow<AccountPathRequest?>(null)
     val accountPathRequest: StateFlow<AccountPathRequest?> = _accountPathRequest.asStateFlow()
+
+    private val _nfcWaitingForTag = MutableStateFlow(false)
+    val nfcWaitingForTag: StateFlow<Boolean> = _nfcWaitingForTag.asStateFlow()
+    private val _nfcTagResult = MutableStateFlow<NfcReadResult?>(null)
+    val nfcTagResult: StateFlow<NfcReadResult?> = _nfcTagResult.asStateFlow()
+
+    fun startNfcWaiting() {
+        _nfcTagResult.value = null
+        _nfcWaitingForTag.value = true
+    }
+
+    fun stopNfcWaiting() {
+        _nfcWaitingForTag.value = false
+        _nfcTagResult.value = null
+    }
+
+    fun onNfcTagResult(result: NfcReadResult) {
+        _nfcTagResult.value = result
+    }
+
+    fun clearNfcResult() {
+        _nfcTagResult.value = null
+    }
+
     private var currentSigningCallback: SigningCallbackImpl? = null
 
     // --- Nostr inbox ---
