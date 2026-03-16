@@ -1,9 +1,13 @@
 """
-Core NIP-04 encryption, Nostr event creation, and relay publishing.
+Standalone NIP-04 crypto and Nostr event construction.
 
 Uses embit for secp256k1 (ECDH + Schnorr) and pyaes for AES-256-CBC.
-These are standalone — no Electrum imports — so the module is testable
-with plain pytest.
+No Electrum imports — testable with plain pytest.
+
+The Electrum Qt plugin (qt.py) uses electrum_aionostr for relay I/O
+and NIP-04 encryption, but this module serves as:
+  1. A testable reference implementation of the crypto
+  2. The standalone CLI/scripting entry point
 """
 from __future__ import annotations
 
@@ -153,7 +157,6 @@ def create_nostr_event(privkey_hex: str, recipient_pubkey_hex: str,
     ]
 
     event_id = compute_event_id(our_pubkey_hex, created_at, 4, tags, encrypted)
-
     sig = schnorr_sign(privkey_bytes, bytes.fromhex(event_id))
 
     return {
@@ -165,47 +168,3 @@ def create_nostr_event(privkey_hex: str, recipient_pubkey_hex: str,
         "content": encrypted,
         "sig": sig.hex(),
     }
-
-
-# ---------------------------------------------------------------------------
-# Relay publishing (async, used from Electrum's event loop)
-# ---------------------------------------------------------------------------
-
-DEFAULT_RELAYS = [
-    "wss://nos.lol",
-    "wss://relay.damus.io",
-    "wss://relay.primal.net",
-]
-
-
-async def publish_event(event: dict, relays: list[str] | None = None):
-    """Publish a Nostr event to *relays* via WebSocket.
-
-    Uses ``websockets`` if available (Electrum bundles it), otherwise
-    falls back to synchronous ``requests``-style approach.
-    """
-    relays = relays or DEFAULT_RELAYS
-    msg = json.dumps(["EVENT", event])
-    errors = []
-
-    try:
-        import websockets
-
-        for url in relays:
-            try:
-                async with websockets.connect(url) as ws:
-                    await ws.send(msg)
-                    # Wait briefly for OK response
-                    try:
-                        resp = await asyncio.wait_for(ws.recv(), timeout=5)
-                    except Exception:
-                        resp = None
-                    return {"status": "ok", "relay": url, "response": resp}
-            except Exception as e:
-                errors.append(f"{url}: {e}")
-    except ImportError:
-        errors.append("websockets library not available")
-
-    return {"status": "error", "message": "; ".join(errors)}
-
-
