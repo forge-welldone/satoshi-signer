@@ -51,7 +51,7 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 Kotlin/Jetpack Compose (thin shell)     Python backend (via Chaquopy)
 ┌──────────────────────────┐            ┌──────────────────────────┐
 │ UI Screens (5 screens)   │            │ psbt_parser (embit)      │
-│ SignerViewModel           │◄─bridge──►│ signer (trezorlib)       │
+│ SignerViewModel          │◄──bridge──►│ signer (trezorlib)       │
 │ USB Bridge (UsbRequest)  │            │ broadcaster (requests)   │
 │ Nostr receiver (OkHttp)  │            │ usb_transport (custom)   │
 │ NFC reader / file picker │            │ trezor_ui (callbacks)    │
