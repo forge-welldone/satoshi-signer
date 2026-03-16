@@ -106,6 +106,11 @@ class Plugin(BasePlugin, Logger):
             if not recipient_npub:
                 return
 
+        # Confirm dialog — shows current npub, lets user change it
+        confirmed, recipient_npub = self._confirm_send(window, wallet, recipient_npub)
+        if not confirmed:
+            return
+
         try:
             recipient_hex = self._npub_to_hex(recipient_npub)
         except Exception as e:
@@ -165,6 +170,37 @@ class Plugin(BasePlugin, Logger):
                     ["expiration", str(int(time.time()) + KEEP_DELAY)],
                 ],
             )
+
+    def _confirm_send(self, window: 'ElectrumWindow',
+                      wallet: 'Abstract_Wallet',
+                      npub: str) -> tuple:
+        """Show confirmation with current npub and option to change it.
+
+        Returns (confirmed: bool, npub: str).
+        """
+        d = WindowModalDialog(window, _("Send to Signer"))
+        layout = QVBoxLayout(d)
+        layout.addWidget(QLabel(_("Send this PSBT to:")))
+        npub_edit = QLineEdit()
+        npub_edit.setText(npub)
+        layout.addWidget(npub_edit)
+        layout.addWidget(QLabel(
+            _("Relays: {}").format(self.config.NOSTR_RELAYS)
+        ))
+        layout.addLayout(Buttons(CancelButton(d), OkButton(d)))
+
+        if not d.exec():
+            return False, npub
+
+        new_npub = npub_edit.text().strip()
+        if not new_npub.startswith("npub1"):
+            window.show_error(_("Invalid npub — must start with npub1"))
+            return False, npub
+
+        if new_npub != npub:
+            wallet.db.put(WK_RECIPIENT_NPUB, new_npub)
+            wallet.save_db()
+        return True, new_npub
 
     # ------------------------------------------------------------------
     # Settings
