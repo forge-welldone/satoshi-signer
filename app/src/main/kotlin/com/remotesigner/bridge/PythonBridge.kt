@@ -49,6 +49,8 @@ class PythonBridge {
         fun onStatus(status: String)
         /** Blocks the calling (Python) thread until the user responds. */
         fun requestPassphrase(availableOnDevice: Boolean): String
+        /** Blocks until the user provides an account derivation path (e.g., "m/84'/0'/0'"). */
+        fun requestAccountPath(): String
     }
 
     /**
@@ -89,6 +91,8 @@ class SigningCallbackImpl(
     private val onStatusUpdate: (String) -> Unit,
     private val onPassphraseRequest: (availableOnDevice: Boolean) -> Unit,
     private val onPassphraseSubmitted: () -> Unit = {},
+    private val onAccountPathRequest: () -> Unit = {},
+    private val onAccountPathSubmitted: () -> Unit = {},
 ) : PythonBridge.SigningCallback {
 
     companion object {
@@ -97,6 +101,7 @@ class SigningCallbackImpl(
     }
 
     private val passphraseQueue = LinkedBlockingQueue<String>(1)
+    private val accountPathQueue = LinkedBlockingQueue<String>(1)
 
     override fun onStatus(status: String) = onStatusUpdate(status)
 
@@ -113,6 +118,19 @@ class SigningCallbackImpl(
         return response
     }
 
+    /**
+     * Called from Python when the PSBT has relative derivation paths and
+     * auto-detection failed.  Blocks until [submitAccountPath] or [cancel].
+     */
+    override fun requestAccountPath(): String {
+        onAccountPathRequest()
+        val response = accountPathQueue.take()
+        if (response == CANCEL_SENTINEL) {
+            throw RuntimeException("Account path entry cancelled")
+        }
+        return response
+    }
+
     /** Called by the UI when the user submits a passphrase or chooses on-device. */
     fun submitPassphrase(passphrase: String) {
         passphraseQueue.clear()  // prevent double-submission
@@ -120,9 +138,18 @@ class SigningCallbackImpl(
         onPassphraseSubmitted()
     }
 
+    /** Called by the UI when the user submits an account path. */
+    fun submitAccountPath(path: String) {
+        accountPathQueue.clear()
+        accountPathQueue.put(path)
+        onAccountPathSubmitted()
+    }
+
     /** Called by cancelSigning() to unblock the Python thread. */
     fun cancel() {
         passphraseQueue.clear()
         passphraseQueue.put(CANCEL_SENTINEL)
+        accountPathQueue.clear()
+        accountPathQueue.put(CANCEL_SENTINEL)
     }
 }

@@ -388,6 +388,13 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                         },
                     )
                 }
+                "cancelled" -> {
+                    if (currentPsbtBytes != null) {
+                        parsePsbt(currentPsbtBytes!!)
+                    } else {
+                        _state.value = AppState.Home
+                    }
+                }
                 else -> {
                     _state.value = AppState.Error(
                         result["message"]?.toString() ?: "Signing failed"

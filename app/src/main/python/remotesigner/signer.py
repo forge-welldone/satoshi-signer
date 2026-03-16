@@ -7,7 +7,8 @@ hwilib/devices/trezor.py, stripped to the subset needed for standard
 Bitcoin single-sig and multisig workflows.
 """
 
-from typing import Callable, Dict, List, Optional, Tuple
+import hashlib
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from embit.psbt import PSBT
 from embit.networks import NETWORKS
@@ -16,6 +17,7 @@ from embit.script import Script
 from trezorlib import messages
 from trezorlib.client import TrezorClient
 from trezorlib import btc as trezor_btc
+from trezorlib.exceptions import TrezorFailure
 from trezorlib.messages import (
     HDNodePathType,
     HDNodeType,
@@ -299,6 +301,143 @@ def _get_master_fingerprint(client: TrezorClient, coin_name: str) -> bytes:
     return fp_int.to_bytes(4, "big")
 
 
+def _node_fingerprint(public_key: bytes) -> bytes:
+    """Compute the BIP32 fingerprint of a public key.
+
+    The fingerprint is the first 4 bytes of HASH160(pubkey).
+    """
+    sha = hashlib.sha256(public_key).digest()
+    ripemd = hashlib.new("ripemd160", sha).digest()
+    return ripemd[:4]
+
+
+def _parse_account_path(path_str: str) -> List[int]:
+    """Parse a BIP32 account path string into a list of ints.
+
+    Accepts formats like ``"m/84'/0'/20'"``, ``"84'/0'/20'"``,
+    or ``"84h/0h/20h"``.
+    """
+    path_str = path_str.strip()
+    if path_str.startswith("m/"):
+        path_str = path_str[2:]
+
+    components: List[int] = []
+    for part in path_str.split("/"):
+        part = part.strip()
+        if not part:
+            continue
+        hardened = part[-1] in ("'", "h", "H")
+        if hardened:
+            part = part[:-1]
+        num = int(part)
+        if hardened:
+            num += 0x80000000
+        components.append(num)
+    return components
+
+
+def _is_relative_path(derivation: List[int]) -> bool:
+    """Check if a derivation path looks relative (not from master).
+
+    Full BIP paths always start with a hardened purpose (e.g., 84').
+    Relative paths from an account-level xpub start with the unhardened
+    chain index (0 for receive, 1 for change).
+    """
+    if not derivation:
+        return False
+    return derivation[0] < 0x80000000
+
+
+def _prioritize_purposes(script_pubkey: bytes) -> List[int]:
+    """Return BIP purpose numbers ordered by likelihood for a script type."""
+    is_wit, wit_ver, wit_prog = is_witness(script_pubkey)
+    if is_wit:
+        if wit_ver == 1 and len(wit_prog) == 32:
+            return [86, 84, 49, 44]  # Taproot first
+        if wit_ver == 0 and len(wit_prog) == 20:
+            return [84, 49, 44, 86]  # Native segwit first
+    if is_p2sh(script_pubkey):
+        return [49, 84, 44, 86]  # Wrapped segwit first
+    return [44, 84, 49, 86]  # Legacy first
+
+
+def _find_key_origin(
+    client: TrezorClient,
+    coin_name: str,
+    psbt: PSBT,
+    master_fp: bytes,
+) -> Dict[bytes, List[int]]:
+    """Resolve relative derivation paths to full BIP paths.
+
+    PSBTs from watch-only wallets have relative paths (e.g., ``[1, 47]``)
+    instead of full paths (e.g., ``[84', 0', 0', 1, 47]``).  This happens
+    regardless of whether the fingerprint is the master's or an intermediate
+    xpub's.
+
+    Detection: any input whose first path component is unhardened.
+    Resolution: probe standard BIP account paths on the Trezor, verifying
+    that the derived pubkey matches the PSBT's pubkey.
+
+    Returns ``{fingerprint: prefix_path}`` for each fingerprint needing a
+    prefix.
+    """
+    # Find an input with a relative path and extract its pubkey for verification
+    sample_pub = None
+    sample_deriv = None
+    sample_script = None
+
+    for inp in psbt.inputs:
+        for pub, deriv in inp.bip32_derivations.items():
+            if _is_relative_path(deriv.derivation):
+                sample_pub = pub
+                sample_deriv = deriv
+                sample_script = inp.utxo.script_pubkey.data if inp.utxo else None
+                break
+        if not sample_pub:
+            for pub, (_, deriv) in inp.taproot_bip32_derivations.items():
+                if _is_relative_path(deriv.derivation):
+                    sample_pub = pub
+                    sample_deriv = deriv
+                    sample_script = inp.utxo.script_pubkey.data if inp.utxo else None
+                    break
+        if sample_pub:
+            break
+
+    if sample_pub is None:
+        return {}
+
+    target_pubkey = sample_pub.sec()
+    relative_path = list(sample_deriv.derivation)
+    fp = sample_deriv.fingerprint
+    coin_type = 0 if coin_name == "Bitcoin" else 1
+
+    # Prioritize BIP purpose based on script type
+    purposes = (
+        _prioritize_purposes(sample_script)
+        if sample_script
+        else [84, 49, 44, 86]
+    )
+
+    for purpose in purposes:
+        for account in range(100):
+            prefix = [
+                0x80000000 + purpose,
+                0x80000000 + coin_type,
+                0x80000000 + account,
+            ]
+            full_path = prefix + relative_path
+            try:
+                result = trezor_btc.get_public_node(
+                    client, n=full_path, coin_name=coin_name
+                )
+                if result.node.public_key == target_pubkey:
+                    return {fp: prefix}
+            except Exception:
+                continue
+
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # PSBT → trezorlib conversion
 # ---------------------------------------------------------------------------
@@ -306,12 +445,17 @@ def _get_master_fingerprint(client: TrezorClient, coin_name: str) -> bytes:
 def psbt_to_trezor_inputs(
     psbt: PSBT,
     master_fp: bytes,
+    fp_to_prefix: Optional[Dict[bytes, List[int]]] = None,
 ) -> Tuple[List[TxInputType], List[int]]:
     """Convert PSBT inputs to ``TxInputType`` list.
 
     Returns ``(inputs, to_ignore)`` where *to_ignore* lists input indices
     that do not belong to this signer (will be signed with EXTERNAL type
     or dummy derivation).
+
+    *fp_to_prefix* maps intermediate xpub fingerprints to their derivation
+    prefix from master, for PSBTs created by watch-only wallets with
+    relative paths.
     """
     inputs: List[TxInputType] = []
     to_ignore: List[int] = []
@@ -348,14 +492,24 @@ def psbt_to_trezor_inputs(
         if is_taproot:
             # For taproot, check taproot_bip32_derivations
             for pub, (leaf_hashes, deriv) in inp_scope.taproot_bip32_derivations.items():
-                if deriv.fingerprint == master_fp:
+                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
+                    prefix = fp_to_prefix[deriv.fingerprint]
+                    address_n = prefix + list(deriv.derivation)
+                    found_key = True
+                    break
+                elif deriv.fingerprint == master_fp:
                     address_n = list(deriv.derivation)
                     found_key = True
                     break
         else:
             # Standard ECDSA — check bip32_derivations
             for pub, deriv in inp_scope.bip32_derivations.items():
-                if deriv.fingerprint == master_fp:
+                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
+                    prefix = fp_to_prefix[deriv.fingerprint]
+                    address_n = prefix + list(deriv.derivation)
+                    found_key = True
+                    break
+                elif deriv.fingerprint == master_fp:
                     address_n = list(deriv.derivation)
                     found_key = True
                     break
@@ -411,12 +565,14 @@ def psbt_to_trezor_outputs(
     psbt: PSBT,
     master_fp: bytes,
     network: str = "main",
+    fp_to_prefix: Optional[Dict[bytes, List[int]]] = None,
 ) -> List[TxOutputType]:
     """Convert PSBT outputs to ``TxOutputType`` list.
 
-    Outputs whose ``bip32_derivations`` match *master_fp* are treated as
-    change (``address_n`` set, ``address`` cleared).  All other outputs get
-    their ``address`` set from the scriptPubKey.
+    Outputs whose ``bip32_derivations`` match *master_fp* (or a fingerprint
+    in *fp_to_prefix*) are treated as change (``address_n`` set, ``address``
+    cleared).  All other outputs get their ``address`` set from the
+    scriptPubKey.
     """
     net = NETWORKS[network]
     outputs: List[TxOutputType] = []
@@ -433,17 +589,35 @@ def psbt_to_trezor_outputs(
 
         if is_taproot:
             for pub, (leaf_hashes, deriv) in out_scope.taproot_bip32_derivations.items():
-                if deriv.fingerprint == master_fp:
+                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
+                    prefix = fp_to_prefix[deriv.fingerprint]
+                    address_n = prefix + list(deriv.derivation)
+                    found_change = True
+                    out_script_type = OutputScriptType.PAYTOTAPROOT
+                    break
+                elif deriv.fingerprint == master_fp:
                     address_n = list(deriv.derivation)
                     found_change = True
                     out_script_type = OutputScriptType.PAYTOTAPROOT
                     break
         else:
             for pub, deriv in out_scope.bip32_derivations.items():
-                if deriv.fingerprint == master_fp:
+                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
+                    prefix = fp_to_prefix[deriv.fingerprint]
+                    address_n = prefix + list(deriv.derivation)
+                    found_change = True
+                    sp_data = script_pubkey.data if script_pubkey else b""
+                    redeem_data = (
+                        out_scope.redeem_script.data
+                        if out_scope.redeem_script
+                        else None
+                    )
+                    ist = detect_script_type(sp_data, redeem_data, None)
+                    out_script_type = _input_script_type_to_output(ist)
+                    break
+                elif deriv.fingerprint == master_fp:
                     address_n = list(deriv.derivation)
                     found_change = True
-                    # Determine output script type from the scriptPubKey
                     sp_data = script_pubkey.data if script_pubkey else b""
                     redeem_data = (
                         out_scope.redeem_script.data
@@ -627,21 +801,57 @@ def sign_psbt(
             master_fp = _get_master_fingerprint(client, coin_name)
             _status(f"Device fingerprint: {master_fp.hex()}")
 
-            # Log PSBT fingerprints for comparison
-            psbt_fps = set()
-            for inp_scope in psbt.inputs:
-                for pub, deriv in inp_scope.bip32_derivations.items():
-                    psbt_fps.add(deriv.fingerprint.hex())
-            _status(f"PSBT fingerprints: {', '.join(sorted(psbt_fps))}")
-            if master_fp.hex() in psbt_fps:
-                _status("Fingerprint MATCH found")
-            else:
-                _status("WARNING: device fingerprint not in PSBT!")
+            # Resolve key origins for watch-only wallet PSBTs (relative paths)
+            _status("Checking derivation paths...")
+            fp_to_prefix = _find_key_origin(client, coin_name, psbt, master_fp)
+
+            # Fallback: ask the user for the account path
+            if not fp_to_prefix:
+                # Find a fingerprint with relative paths (if any)
+                rel_fp = None
+                for inp_scope in psbt.inputs:
+                    for pub, deriv in inp_scope.bip32_derivations.items():
+                        if _is_relative_path(deriv.derivation):
+                            rel_fp = deriv.fingerprint
+                            break
+                    if rel_fp:
+                        break
+
+                if rel_fp is not None:
+                    _status("Could not auto-detect account path")
+                    if status_callback is not None:
+                        try:
+                            path_str = str(
+                                status_callback.requestAccountPath()
+                            )
+                            prefix = _parse_account_path(path_str)
+                            fp_to_prefix = {rel_fp: prefix}
+                        except Exception as e:
+                            raise ValueError(
+                                f"Account path required but not provided: {e}"
+                            )
+                    else:
+                        raise ValueError(
+                            "PSBT has relative derivation paths. "
+                            "Account path (e.g., m/84'/0'/0') is required."
+                        )
+
+            if fp_to_prefix:
+                for fp, prefix in fp_to_prefix.items():
+                    path_str = "/".join(
+                        f"{p - 0x80000000}'" if p >= 0x80000000 else str(p)
+                        for p in prefix
+                    )
+                    _status(f"Resolved account path: m/{path_str}")
 
             # Convert PSBT to trezorlib types
             _status("Preparing transaction...")
-            trezor_inputs, to_ignore = psbt_to_trezor_inputs(psbt, master_fp)
-            trezor_outputs = psbt_to_trezor_outputs(psbt, master_fp, network)
+            trezor_inputs, to_ignore = psbt_to_trezor_inputs(
+                psbt, master_fp, fp_to_prefix
+            )
+            trezor_outputs = psbt_to_trezor_outputs(
+                psbt, master_fp, network, fp_to_prefix
+            )
             prev_txes = psbt_to_prev_txes(psbt)
 
             # Prepare extra sign_tx kwargs from the PSBT global transaction
@@ -681,9 +891,12 @@ def sign_psbt(
                     # partial_sigs keyed by the pubkey
                     sig_with_sighash = sig + b"\x01"
 
-                    # Find the pubkey that matches master_fp
+                    # Find the pubkey that matches master_fp or fp_to_prefix
                     for pub, deriv in inp_scope.bip32_derivations.items():
-                        if deriv.fingerprint == master_fp:
+                        if deriv.fingerprint == master_fp or (
+                            fp_to_prefix
+                            and deriv.fingerprint in fp_to_prefix
+                        ):
                             inp_scope.partial_sigs[pub] = sig_with_sighash
                             break
 
@@ -712,7 +925,28 @@ def sign_psbt(
             except Exception:
                 pass
 
+    except TrezorFailure as e:
+        if e.code in (
+            messages.FailureType.ActionCancelled,
+            messages.FailureType.PinCancelled,
+        ):
+            _status("Signing cancelled.")
+            return {
+                "status": "cancelled",
+                "message": str(e),
+            }
+        _status(f"Error: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+        }
     except Exception as e:
+        if "cancelled" in str(e).lower():
+            _status("Signing cancelled.")
+            return {
+                "status": "cancelled",
+                "message": str(e),
+            }
         _status(f"Error: {e}")
         return {
             "status": "error",

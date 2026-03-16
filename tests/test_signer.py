@@ -17,11 +17,16 @@ from remotesigner.signer import (
     is_p2sh,
     is_witness,
     _input_script_type_to_output,
+    _is_relative_path,
+    _parse_account_path,
+    _node_fingerprint,
+    _find_key_origin,
     _parse_multisig_script,
     psbt_to_trezor_inputs,
     psbt_to_trezor_outputs,
     psbt_to_prev_txes,
     _get_master_fingerprint,
+    sign_psbt,
 )
 
 
@@ -484,3 +489,418 @@ class TestMultisigPsbtConversion:
         wrong_fp = b"\xde\xad\xbe\xef"
         inputs, to_ignore = psbt_to_trezor_inputs(psbt, wrong_fp)
         assert to_ignore == [0]
+
+
+# ---------------------------------------------------------------------------
+# Test _node_fingerprint
+# ---------------------------------------------------------------------------
+
+class TestNodeFingerprint:
+    def test_known_bip32_vector(self):
+        """BIP32 test vector 1: master pubkey → fingerprint 3442193e."""
+        pubkey = bytes.fromhex(
+            "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2"
+        )
+        assert _node_fingerprint(pubkey) == bytes.fromhex("3442193e")
+
+    def test_returns_4_bytes(self):
+        fp = _node_fingerprint(b"\x02" + b"\x01" * 32)
+        assert len(fp) == 4
+
+
+# ---------------------------------------------------------------------------
+# Test _find_key_origin (watch-only wallet path resolution)
+# ---------------------------------------------------------------------------
+
+class TestIsRelativePath:
+    def test_relative_change_path(self):
+        assert _is_relative_path([1, 47]) is True
+
+    def test_relative_receive_path(self):
+        assert _is_relative_path([0, 5]) is True
+
+    def test_full_bip84_path(self):
+        assert _is_relative_path([0x80000054, 0x80000000, 0x80000000, 1, 47]) is False
+
+    def test_full_bip44_path(self):
+        assert _is_relative_path([0x8000002C, 0x80000000, 0x80000000, 0, 0]) is False
+
+    def test_empty_path(self):
+        assert _is_relative_path([]) is False
+
+
+class TestParseAccountPath:
+    def test_standard_bip84(self):
+        assert _parse_account_path("m/84'/0'/0'") == [0x80000054, 0x80000000, 0x80000000]
+
+    def test_without_m_prefix(self):
+        assert _parse_account_path("84'/0'/0'") == [0x80000054, 0x80000000, 0x80000000]
+
+    def test_account_20(self):
+        assert _parse_account_path("m/84'/0'/20'") == [0x80000054, 0x80000000, 0x80000014]
+
+    def test_h_suffix(self):
+        assert _parse_account_path("84h/0h/20h") == [0x80000054, 0x80000000, 0x80000014]
+
+    def test_bip49(self):
+        assert _parse_account_path("m/49'/0'/0'") == [0x80000031, 0x80000000, 0x80000000]
+
+    def test_testnet(self):
+        assert _parse_account_path("m/84'/1'/0'") == [0x80000054, 0x80000001, 0x80000000]
+
+    def test_whitespace_tolerance(self):
+        assert _parse_account_path("  m/84'/0'/0'  ") == [0x80000054, 0x80000000, 0x80000000]
+
+
+class TestFindKeyOrigin:
+    def test_noop_when_paths_are_full(self):
+        """No probing needed if PSBT has full BIP paths (hardened first component)."""
+        from embit.psbt import PSBT
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        psbt = PSBT.parse(psbt_bytes)
+
+        mock_client = MagicMock()
+        result = _find_key_origin(mock_client, "Bitcoin", psbt, MASTER_FP)
+        assert result == {}
+
+    def test_resolves_relative_paths_by_pubkey(self):
+        """Finds correct account prefix by matching derived pubkey."""
+        from embit.psbt import PSBT
+        from embit.ec import PublicKey
+
+        target_pubkey = bytes.fromhex(
+            "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2"
+        )
+
+        # Build a minimal mock PSBT with a relative path
+        mock_deriv = MagicMock()
+        mock_deriv.fingerprint = b"\xDE\xC1\xA7\xC9"
+        mock_deriv.derivation = [1, 47]
+
+        mock_pub = MagicMock()
+        mock_pub.sec.return_value = target_pubkey
+
+        mock_inp = MagicMock()
+        mock_inp.bip32_derivations = {mock_pub: mock_deriv}
+        mock_inp.taproot_bip32_derivations = {}
+        mock_inp.utxo.script_pubkey.data = b"\x00\x14" + b"\xab" * 20  # P2WPKH
+
+        mock_psbt = MagicMock()
+        mock_psbt.inputs = [mock_inp]
+
+        # Trezor returns matching pubkey for the correct full path
+        mock_result = MagicMock()
+        mock_result.node.public_key = target_pubkey
+
+        master_fp = b"\xDE\xC1\xA7\xC9"  # Same fingerprint — the tricky case
+
+        with patch(
+            "remotesigner.signer.trezor_btc.get_public_node",
+            return_value=mock_result,
+        ):
+            result = _find_key_origin(MagicMock(), "Bitcoin", mock_psbt, master_fp)
+
+        assert master_fp in result
+        # BIP84 mainnet account 0
+        assert result[master_fp] == [0x80000054, 0x80000000, 0x80000000]
+
+    def test_finds_non_zero_account(self):
+        """Can discover account 20 (not just 0-2)."""
+        from embit.ec import PublicKey
+
+        target_pubkey = bytes.fromhex(
+            "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2"
+        )
+
+        mock_deriv = MagicMock()
+        mock_deriv.fingerprint = b"\xDE\xC1\xA7\xC9"
+        mock_deriv.derivation = [1, 47]
+
+        mock_pub = MagicMock()
+        mock_pub.sec.return_value = target_pubkey
+
+        mock_inp = MagicMock()
+        mock_inp.bip32_derivations = {mock_pub: mock_deriv}
+        mock_inp.taproot_bip32_derivations = {}
+        mock_inp.utxo.script_pubkey.data = b"\x00\x14" + b"\xab" * 20
+
+        mock_psbt = MagicMock()
+        mock_psbt.inputs = [mock_inp]
+
+        # Only return matching pubkey for account 20
+        wrong_pubkey = b"\x02" + b"\xff" * 32
+
+        def side_effect(client, n, coin_name):
+            result = MagicMock()
+            # Match only when account component is 20
+            if len(n) >= 3 and n[2] == 0x80000000 + 20:
+                result.node.public_key = target_pubkey
+            else:
+                result.node.public_key = wrong_pubkey
+            return result
+
+        with patch(
+            "remotesigner.signer.trezor_btc.get_public_node",
+            side_effect=side_effect,
+        ):
+            result = _find_key_origin(
+                MagicMock(), "Bitcoin", mock_psbt, b"\xDE\xC1\xA7\xC9"
+            )
+
+        fp = b"\xDE\xC1\xA7\xC9"
+        assert fp in result
+        # m/84'/0'/20'
+        assert result[fp] == [0x80000054, 0x80000000, 0x80000014]
+
+
+# ---------------------------------------------------------------------------
+# Test PSBT-to-trezor conversion with key origin prefix (watch-only wallets)
+# ---------------------------------------------------------------------------
+
+class TestPsbtToTrezorInputsWithPrefix:
+    def test_prepends_prefix_when_fp_in_prefix_map(self):
+        """Input derivation path gets prefix prepended when fingerprint
+        is in fp_to_prefix (watch-only wallet with relative paths)."""
+        from embit.psbt import PSBT
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        psbt = PSBT.parse(psbt_bytes)
+
+        # Get the original path with matching master_fp
+        inputs_orig, _ = psbt_to_trezor_inputs(psbt, MASTER_FP)
+        original_path = list(inputs_orig[0].address_n)
+
+        # Call with different master but PSBT's fp mapped to a prefix
+        wrong_master = b"\xAA\xBB\xCC\xDD"
+        prefix = [0x80000054, 0x80000000, 0x80000000]  # m/84'/0'/0'
+        fp_to_prefix = {MASTER_FP: prefix}
+
+        inputs, to_ignore = psbt_to_trezor_inputs(psbt, wrong_master, fp_to_prefix)
+
+        assert to_ignore == []
+        assert list(inputs[0].address_n) == prefix + original_path
+
+    def test_no_prefix_needed_when_master_matches(self):
+        """Existing behavior: direct master_fp match uses path as-is."""
+        from embit.psbt import PSBT
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        psbt = PSBT.parse(psbt_bytes)
+
+        inputs, to_ignore = psbt_to_trezor_inputs(psbt, MASTER_FP, {})
+
+        assert to_ignore == []
+        assert len(inputs[0].address_n) > 0
+
+
+class TestPsbtToTrezorOutputsWithPrefix:
+    def test_detects_change_with_prefix_map(self):
+        """Change output detected even when master_fp doesn't match,
+        via fp_to_prefix mapping."""
+        from embit.psbt import PSBT
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        psbt = PSBT.parse(psbt_bytes)
+
+        # Get original change path
+        outputs_orig = psbt_to_trezor_outputs(psbt, MASTER_FP, "main")
+        original_change_path = list(outputs_orig[1].address_n)
+
+        # With wrong master but prefix map
+        wrong_master = b"\xAA\xBB\xCC\xDD"
+        prefix = [0x80000054, 0x80000000, 0x80000000]
+        fp_to_prefix = {MASTER_FP: prefix}
+
+        outputs = psbt_to_trezor_outputs(psbt, wrong_master, "main", fp_to_prefix)
+
+        # Output 0: external (no bip32 deriv) → address set
+        assert outputs[0].address is not None
+
+        # Output 1: change → address_n with prefix, no address
+        assert len(outputs[1].address_n) > 0
+        assert list(outputs[1].address_n) == prefix + original_change_path
+
+    def test_no_prefix_preserves_existing_behavior(self):
+        """Without prefix map, wrong master_fp → all external."""
+        from embit.psbt import PSBT
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        psbt = PSBT.parse(psbt_bytes)
+
+        wrong_master = b"\xAA\xBB\xCC\xDD"
+        outputs = psbt_to_trezor_outputs(psbt, wrong_master, "main", {})
+
+        for out in outputs:
+            assert out.address is not None
+
+
+# ---------------------------------------------------------------------------
+# Test with real watch-only PSBT (skipped if fixture not present)
+# ---------------------------------------------------------------------------
+
+WATCH_ONLY_PSBT_PATH = os.path.join(PSBTS_DIR, "aa_cold3_watch-35a87c14.psbt")
+
+
+@pytest.mark.skipif(
+    not os.path.exists(WATCH_ONLY_PSBT_PATH),
+    reason="Watch-only PSBT fixture not present",
+)
+class TestWatchOnlyPsbtConversion:
+    """Tests for PSBTs with relative derivation paths (watch-only wallets)."""
+
+    @pytest.fixture
+    def psbt(self):
+        from embit.psbt import PSBT
+
+        with open(WATCH_ONLY_PSBT_PATH, "rb") as f:
+            return PSBT.parse(f.read())
+
+    def test_paths_are_relative(self, psbt):
+        """Verify the PSBT has short relative paths (2 components)."""
+        for pub, deriv in psbt.inputs[0].bip32_derivations.items():
+            assert len(deriv.derivation) == 2
+
+    def test_inputs_with_bip84_prefix(self, psbt):
+        """With BIP84 prefix, input gets full derivation path."""
+        account_fp = bytes.fromhex("dec1a7c9")
+        master_fp = b"\xAA\xBB\xCC\xDD"
+        prefix = [0x80000054, 0x80000000, 0x80000000]  # m/84'/0'/0'
+        fp_to_prefix = {account_fp: prefix}
+
+        inputs, to_ignore = psbt_to_trezor_inputs(psbt, master_fp, fp_to_prefix)
+
+        assert to_ignore == []
+        # Full path: m/84'/0'/0'/1/47
+        expected = prefix + [1, 47]
+        assert list(inputs[0].address_n) == expected
+        assert inputs[0].script_type == InputScriptType.SPENDWITNESS
+
+    def test_change_output_detected_with_prefix(self, psbt):
+        """Change output (index 16) marked as change with prefix."""
+        account_fp = bytes.fromhex("dec1a7c9")
+        master_fp = b"\xAA\xBB\xCC\xDD"
+        prefix = [0x80000054, 0x80000000, 0x80000000]
+        fp_to_prefix = {account_fp: prefix}
+
+        outputs = psbt_to_trezor_outputs(psbt, master_fp, "main", fp_to_prefix)
+
+        # Output 16 is change (2.62 BTC)
+        change = outputs[16]
+        expected = prefix + [1, 48]
+        assert list(change.address_n) == expected
+        assert change.script_type == OutputScriptType.PAYTOWITNESS
+
+    def test_non_change_outputs_have_addresses(self, psbt):
+        """All 16 non-change outputs should have addresses."""
+        account_fp = bytes.fromhex("dec1a7c9")
+        master_fp = b"\xAA\xBB\xCC\xDD"
+        prefix = [0x80000054, 0x80000000, 0x80000000]
+        fp_to_prefix = {account_fp: prefix}
+
+        outputs = psbt_to_trezor_outputs(psbt, master_fp, "main", fp_to_prefix)
+
+        for i in range(16):
+            assert outputs[i].address is not None, f"Output {i} should have address"
+
+
+# ---------------------------------------------------------------------------
+# Test sign_psbt cancellation handling
+# ---------------------------------------------------------------------------
+
+class TestSignPsbtCancellation:
+    """Trezor ActionCancelled should return 'cancelled' status, not 'error'."""
+
+    def test_action_cancelled_returns_cancelled_status(self):
+        """When user cancels on Trezor device, sign_psbt returns cancelled."""
+        from trezorlib.exceptions import TrezorFailure
+        from trezorlib.messages import Failure, FailureType
+
+        failure = Failure(code=FailureType.ActionCancelled)
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient") as mock_client_cls, \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_client = mock_client_cls.return_value
+            mock_btc.get_public_node.return_value = MagicMock(
+                root_fingerprint=0x3442193E,
+                node=MagicMock(public_key=b"\x02" + b"\xff" * 32),
+            )
+            mock_btc.sign_tx.side_effect = TrezorFailure(failure)
+
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "cancelled"
+        assert "message" in result
+
+    def test_pin_cancelled_returns_cancelled_status(self):
+        """When user cancels PIN entry, sign_psbt returns cancelled."""
+        from trezorlib.exceptions import TrezorFailure
+        from trezorlib.messages import Failure, FailureType
+
+        failure = Failure(code=FailureType.PinCancelled)
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient") as mock_client_cls, \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_client = mock_client_cls.return_value
+            mock_btc.get_public_node.return_value = MagicMock(
+                root_fingerprint=0x3442193E,
+                node=MagicMock(public_key=b"\x02" + b"\xff" * 32),
+            )
+            mock_btc.sign_tx.side_effect = TrezorFailure(failure)
+
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "cancelled"
+
+    def test_passphrase_cancelled_returns_cancelled_status(self):
+        """When user cancels passphrase entry (via callback), sign_psbt returns cancelled."""
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient") as mock_client_cls, \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_client = mock_client_cls.return_value
+            mock_btc.get_public_node.return_value = MagicMock(
+                root_fingerprint=0x3442193E,
+                node=MagicMock(public_key=b"\x02" + b"\xff" * 32),
+            )
+            mock_btc.sign_tx.side_effect = RuntimeError(
+                "Passphrase entry cancelled"
+            )
+
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "cancelled"
+
+    def test_real_error_still_returns_error_status(self):
+        """Non-cancellation exceptions still return 'error' status."""
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient") as mock_client_cls, \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_client = mock_client_cls.return_value
+            mock_btc.get_public_node.return_value = MagicMock(
+                root_fingerprint=0x3442193E,
+                node=MagicMock(public_key=b"\x02" + b"\xff" * 32),
+            )
+            mock_btc.sign_tx.side_effect = RuntimeError("USB device disconnected")
+
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "error"
+        assert "USB device disconnected" in result["message"]
