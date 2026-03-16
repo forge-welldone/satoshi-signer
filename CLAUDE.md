@@ -79,6 +79,7 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
 - `docs/superpowers/specs/` — Design specifications
+- `nostr_signer/` — Electrum plugin for sending PSBTs over Nostr (uses `electrum_aionostr` + `electrum_ecc`)
 
 ## Key Dependencies
 
