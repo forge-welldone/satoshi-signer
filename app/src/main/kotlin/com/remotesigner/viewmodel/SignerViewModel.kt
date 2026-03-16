@@ -400,6 +400,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         } finally {
             _passphraseRequest.value = null
             _accountPathRequest.value = null
+            _nfcWaitingForTag.value = false
+            _nfcTagResult.value = null
             currentSigningCallback = null
             bridge.close()
             currentUsbBridge = null
@@ -435,6 +437,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         currentSigningCallback = null
         _passphraseRequest.value = null
         _accountPathRequest.value = null
+        _nfcWaitingForTag.value = false
+        _nfcTagResult.value = null
         signingJob?.cancel()
         signingJob = null
         currentUsbBridge?.close()
