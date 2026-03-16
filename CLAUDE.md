@@ -97,6 +97,11 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **Screen stays on during signing** — `FLAG_KEEP_SCREEN_ON` is set while the Signing screen is displayed. Android suspends USB when the screen locks, killing the Trezor connection mid-signing.
 - **USB_DEVICE_ATTACHED intent filter required** — The manifest must declare the USB device filter so our app claims the Trezor when plugged in. Without it, other apps (e.g., Trezor Suite) steal the USB device exclusively. `singleTask` launch mode prevents activity recreation when the intent fires. The ViewModel polls for device attachment when the Trezor isn't connected yet.
 
+## Development Practices
+
+- **Always use TDD** — Write or update tests before writing implementation code when writing or refactoring code.
+- **Keep all test suites in sync** — When changing behavior, update both Android instrumented tests (`app/src/androidTest/`) and Python tests (`tests/`) as needed. Don't leave tests broken or stale.
+
 ## Targets
 
 - Android SDK 35 (min SDK 28 / Android 9.0)
