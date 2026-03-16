@@ -19,10 +19,10 @@ Add a "Save to Phone" button on the partial-sign result screen, alongside the ex
 
 ### AppNavigation changes
 
-- Register an `ActivityResultContracts.CreateDocument("application/octet-stream")` launcher
-- Store pending PSBT bytes in a `remember` variable so the result callback can access them
-- On launcher result, write bytes to the returned URI via `contentResolver.openOutputStream`
-- Default suggested filename: `signed.psbt`
+- Register `rememberLauncherForActivityResult(CreateDocument("application/octet-stream"))` at the top of `AppRoot`, before the `when` block (not inside a branch)
+- Store pending PSBT bytes in a `remember { mutableStateOf<ByteArray?>(null) }` so the result callback can access them
+- On launcher result: if URI is null (user cancelled), do nothing. Otherwise write bytes via `contentResolver.openOutputStream`. Show a Toast on success ("PSBT saved") or failure ("Save failed: ...").
+- Default suggested filename: `partially-signed.psbt`
 
 ### No ViewModel changes
 
@@ -31,3 +31,6 @@ The `updatedPsbt: ByteArray?` field in `AppState.Result` already holds the data 
 ### Test updates
 
 - Update `NavigationTest` and `ScreenRenderTest` to pass the new `onSavePsbt` parameter
+- Update `ScreenRenderTest` text assertion from "Export Updated PSBT" to "Share Updated PSBT"
+- `ChaquopyE2ETest` needs no changes (uses `AppRoot` directly)
+- Save-to-file flow verified by manual testing (CreateDocument launches a system activity)
