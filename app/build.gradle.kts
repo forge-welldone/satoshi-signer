@@ -70,6 +70,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.junit)
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.test.runner)
     debugImplementation(libs.compose.ui.test.manifest)
