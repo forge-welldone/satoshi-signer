@@ -18,7 +18,7 @@ import java.nio.ByteBuffer
 class UsbBridge(
     private val device: UsbDevice,
     private val connection: UsbDeviceConnection,
-) {
+) : SigningBridge {
     private var usbInterface: UsbInterface? = null
     private var endpointIn: UsbEndpoint? = null
     private var endpointOut: UsbEndpoint? = null
@@ -61,7 +61,7 @@ class UsbBridge(
         return sb.toString()
     }
 
-    fun open() {
+    override fun open() {
         if (isOpen) return
 
         val info = dumpDeviceInfo()
@@ -123,7 +123,7 @@ class UsbBridge(
         Log.i(TAG, "Device opened successfully")
     }
 
-    fun close() {
+    override fun close() {
         try {
             usbInterface?.let { connection.releaseInterface(it) }
         } catch (e: Exception) {
@@ -142,7 +142,7 @@ class UsbBridge(
     }
 
     @Synchronized
-    fun writeChunk(data: ByteArray) {
+    override fun writeChunk(data: ByteArray) {
         val ep = endpointOut
             ?: throw IllegalStateException("USB not open: no OUT endpoint")
 
@@ -170,7 +170,7 @@ class UsbBridge(
     }
 
     @Synchronized
-    fun readChunk(): ByteArray {
+    override fun readChunk(): ByteArray {
         val ep = endpointIn
             ?: throw IllegalStateException("USB not open: no IN endpoint")
 

@@ -2,7 +2,7 @@ package com.remotesigner.bridge
 
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
-import com.remotesigner.usb.UsbBridge
+import com.remotesigner.usb.SigningBridge
 import java.util.concurrent.LinkedBlockingQueue
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,7 +26,7 @@ class PythonBridge {
 
     fun signPsbt(
         psbtBytes: ByteArray,
-        bridge: UsbBridge,
+        bridge: SigningBridge,
         callback: SigningCallback,
         network: String = "main",
     ): Map<String, Any?> {
