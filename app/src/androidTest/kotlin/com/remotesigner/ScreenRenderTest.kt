@@ -119,7 +119,7 @@ class ScreenRenderTest {
     }
 
     @Test
-    fun signingScreen_displaysLogAndCopyButton() {
+    fun signingScreen_logHiddenByDefault() {
         val state = TestFixtures.signingStateWithLog
         composeTestRule.setContent {
             SatoshiSignerTheme {
@@ -133,9 +133,55 @@ class ScreenRenderTest {
             }
         }
         composeTestRule.onNodeWithText(state.message).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Show Log").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Debug Log:").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Copy").assertDoesNotExist()
+        composeTestRule.onNodeWithText(state.log).assertDoesNotExist()
+    }
+
+    @Test
+    fun signingScreen_showLogRevealsDebugLog() {
+        val state = TestFixtures.signingStateWithLog
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = state.message,
+                    log = state.log,
+                    passphraseRequest = null,
+                    accountPathRequest = null,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Show Log").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Hide Log").assertIsDisplayed()
         composeTestRule.onNodeWithText("Debug Log:").assertIsDisplayed()
         composeTestRule.onNodeWithText("Copy").assertIsDisplayed()
         composeTestRule.onNodeWithText(state.log).assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_hideLogCollapsesDebugLog() {
+        val state = TestFixtures.signingStateWithLog
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = state.message,
+                    log = state.log,
+                    passphraseRequest = null,
+                    accountPathRequest = null,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Show Log").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Hide Log").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Show Log").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Debug Log:").assertDoesNotExist()
+        composeTestRule.onNodeWithText(state.log).assertDoesNotExist()
     }
 
     @Test
