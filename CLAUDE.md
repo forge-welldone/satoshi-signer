@@ -35,6 +35,9 @@ python -m pytest tests/test_psbt_parser.py::test_function_name -v
 python tests/sign_cli.py --network test parse path/to/file.psbt
 python tests/sign_cli.py --network test sign path/to/file.psbt
 python tests/sign_cli.py --network test sign path/to/file.psbt --record tests/cassettes/name.json
+
+# Run JVM unit tests (no emulator needed)
+./gradlew testDebugUnitTest
 ```
 
 Python test setup requires a venv: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`
@@ -52,6 +55,7 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
     → PythonBridge (Chaquopy) → Python modules
     → TrezorUsbManager / UsbBridge (Android USB Host API)
     → NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
+    → NFC reader mode (Activity) → NDEF text tags (passphrase import)
 ```
 
 **State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error`). UI renders the screen matching current state.
@@ -71,11 +75,13 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 ## Source Layout
 
 - `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge, Nostr)
+- `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
 - `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
 - `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
+- `app/src/test/kotlin/com/remotesigner/nfc/` — JVM unit tests for NDEF parsing (no Android needed)
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
 - `docs/superpowers/specs/` — Design specifications
@@ -107,6 +113,7 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **secp256k1-kmp point multiplication for NIP-04** — `Secp256k1.get().ecdh()` returns SHA-256(compressed_shared_point), NOT the raw x-coordinate NIP-04 needs. Instead, `Nip04.computeSharedSecret()` uses `pubKeyTweakMul(compressedPubkey, privkey)` to get the shared point, then extracts the 32-byte x-coordinate (bytes 1-33 of the 65-byte uncompressed result). The 0x02 prefix is always used for x-only pubkeys (even parity assumption — works because the x-coordinate is the same regardless of y-parity).
 - **Inbox is in-memory** — `_inboxItems: MutableStateFlow<List<InboxItem>>` in ViewModel, separate from the navigation `_state`. Killed process loses inbox; events are re-fetchable from relay within 24h. Deduplication by Nostr event ID.
 - **Passphrase input disables keyboard learning** — The on-phone passphrase `OutlinedTextField` uses `KeyboardType.Password` + `autoCorrect = false` so the IME never learns, suggests, or autocompletes passphrases. `PasswordVisualTransformation` alone only masks display — `KeyboardOptions` are required to control IME behavior.
+- **NFC passphrase import** — Passphrase can be read from any NFC tag (YubiKey static password or generic NDEF tag) as an alternative to typing. Uses `enableReaderMode()` on the Activity (not foreground dispatch) — enabled only while the NFC waiting screen is shown, disabled in `onPause()` as safety net. `repeatOnLifecycle(RESUMED)` re-enables on resume. NDEF RTD_TEXT parsing is a pure function (`parseNdefTextPayload`) for testability. NFC is optional (`android:required="false"`) — the option is hidden on devices without NFC. The passphrase feeds into the same `submitPassphrase()` → `LinkedBlockingQueue` path as keyboard input — zero Python changes.
 
 ## Development Practices
 
