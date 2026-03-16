@@ -25,6 +25,13 @@ object TestFixtures {
         ),
     )
 
+    val sampleOpReturnOutput = TxOutput(
+        address = "unknown",
+        amount = 0L,
+        isChange = false,
+        opReturn = "Your ad here - https://aads.com/",
+    )
+
     val sampleSigners = listOf(
         SignerInfo(fingerprint = "a1b2c3d4", signed = true, isThisDevice = true),
         SignerInfo(fingerprint = "e5f6a7b8", signed = false, isThisDevice = false),
@@ -33,6 +40,16 @@ object TestFixtures {
     val reviewState = AppState.TransactionReview(
         inputs = sampleInputs,
         outputs = sampleOutputs,
+        fee = 2_100L,
+        totalSent = 5_000_000L,
+        status = "needs_sig",
+        signers = sampleSigners,
+        warnings = emptyList(),
+    )
+
+    val reviewStateWithOpReturn = AppState.TransactionReview(
+        inputs = sampleInputs,
+        outputs = listOf(sampleOpReturnOutput) + sampleOutputs,
         fee = 2_100L,
         totalSent = 5_000_000L,
         status = "needs_sig",

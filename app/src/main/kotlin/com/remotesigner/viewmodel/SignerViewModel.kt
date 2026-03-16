@@ -34,6 +34,7 @@ data class TxOutput(
     val address: String,
     val amount: Long,
     val isChange: Boolean,
+    val opReturn: String? = null,
 )
 
 data class SignerInfo(
@@ -212,6 +213,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     address = out["address"]?.toString() ?: "unknown",
                     amount = (out["amount"] as? Number)?.toLong() ?: 0,
                     isChange = out["is_change"] as? Boolean ?: false,
+                    opReturn = out["op_return"]?.toString(),
                 )
             } ?: emptyList()
 

@@ -47,8 +47,21 @@ fun TransactionReviewScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             Text("To:", style = MaterialTheme.typography.titleMedium)
-            state.outputs.filter { !it.isChange }.forEach { out ->
+            state.outputs.filter { !it.isChange && it.opReturn == null }.forEach { out ->
                 OutputRow(out, prefix = "\u2192")
+            }
+
+            val opReturnOutputs = state.outputs.filter { it.opReturn != null }
+            if (opReturnOutputs.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                opReturnOutputs.forEach { out ->
+                    Text("OP_RETURN:", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        out.opReturn!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))

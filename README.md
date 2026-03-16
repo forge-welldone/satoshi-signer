@@ -36,6 +36,7 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 
 - **Single-sig and multisig** PSBT support (P2WPKH, P2SH-P2WPKH, P2TR, P2WSH)
 - **Change output detection** via BIP32 derivation path matching
+- **OP_RETURN display** — shows embedded text (e.g. memos) in the transaction preview
 - **Multisig status tracking** — shows which signers have signed (by fingerprint)
 - **Transaction broadcasting** to mempool.space / blockstream.info with retry and fallback
 - **Manual broadcast fallback** — copy raw hex if API broadcast fails

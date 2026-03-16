@@ -85,6 +85,15 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
             "amount": out_scope.value if out_scope.value is not None else 0,
             "is_change": is_change,
         }
+
+        # Detect OP_RETURN outputs and extract text payload
+        if script_pubkey and script_pubkey.data[:1] == b'\x6a':
+            payload = script_pubkey.data[2:]  # skip OP_RETURN + push length
+            try:
+                out_data["op_return"] = payload.decode("utf-8")
+            except UnicodeDecodeError:
+                out_data["op_return"] = payload.hex()
+
         result.outputs.append(out_data)
 
     # Fee: psbt.fee() sums utxo values minus output values

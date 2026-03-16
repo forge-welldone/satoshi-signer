@@ -36,6 +36,21 @@ class ScreenRenderTest {
     }
 
     @Test
+    fun transactionReviewScreen_displaysOpReturn() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                TransactionReviewScreen(
+                    state = TestFixtures.reviewStateWithOpReturn,
+                    onSign = {},
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("OP_RETURN:").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Your ad here - https://aads.com/").assertIsDisplayed()
+    }
+
+    @Test
     fun signingScreen_displaysProgress() {
         val state = TestFixtures.signingState
         composeTestRule.setContent {

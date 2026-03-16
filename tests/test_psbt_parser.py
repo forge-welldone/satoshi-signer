@@ -126,3 +126,34 @@ class TestParseMultisigPsbt:
     def test_detects_mainnet(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
         assert result["network"] == "main"
+
+
+OP_RETURN_PSBT_PATH = os.path.join(PSBTS_DIR, "aa_cold3_watch-f1516d7b.psbt")
+
+
+@pytest.mark.skipif(
+    not os.path.exists(OP_RETURN_PSBT_PATH),
+    reason="OP_RETURN PSBT fixture not present",
+)
+class TestParseOpReturnPsbt:
+    """Tests for OP_RETURN output detection and text extraction."""
+
+    @pytest.fixture
+    def psbt_bytes(self):
+        with open(OP_RETURN_PSBT_PATH, "rb") as f:
+            return f.read()
+
+    def test_detects_op_return_output(self, psbt_bytes):
+        result = parse_psbt(psbt_bytes)
+        op_return_out = result["outputs"][0]
+        assert op_return_out["op_return"] == "Your ad here - https://aads.com/"
+
+    def test_op_return_output_amount_is_zero(self, psbt_bytes):
+        result = parse_psbt(psbt_bytes)
+        op_return_out = result["outputs"][0]
+        assert op_return_out["amount"] == 0
+
+    def test_non_op_return_output_has_no_op_return_field(self, psbt_bytes):
+        result = parse_psbt(psbt_bytes)
+        change_out = result["outputs"][1]
+        assert "op_return" not in change_out
