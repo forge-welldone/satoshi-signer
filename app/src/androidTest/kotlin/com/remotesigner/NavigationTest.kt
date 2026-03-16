@@ -32,7 +32,12 @@ class NavigationTest {
                         onSign = {},
                         onCancel = {},
                     )
-                    is AppState.Signing -> SigningScreen(message = current.message)
+                    is AppState.Signing -> SigningScreen(
+                        message = current.message,
+                        log = current.log,
+                        passphraseRequest = null,
+                        onCancel = {},
+                    )
                     is AppState.Result -> ResultScreen(
                         state = current,
                         onBroadcast = {},

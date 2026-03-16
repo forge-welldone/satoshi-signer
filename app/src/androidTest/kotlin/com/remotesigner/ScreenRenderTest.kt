@@ -32,13 +32,18 @@ class ScreenRenderTest {
 
     @Test
     fun signingScreen_displaysProgress() {
-        val message = TestFixtures.signingState.message
+        val state = TestFixtures.signingState
         composeTestRule.setContent {
             SatoshiSignerTheme {
-                SigningScreen(message = message)
+                SigningScreen(
+                    message = state.message,
+                    log = state.log,
+                    passphraseRequest = null,
+                    onCancel = {},
+                )
             }
         }
-        composeTestRule.onNodeWithText(message).assertIsDisplayed()
+        composeTestRule.onNodeWithText(state.message).assertIsDisplayed()
     }
 
     @Test

@@ -1,10 +1,17 @@
 package com.remotesigner
 
+import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.viewmodel.AppState
+import com.remotesigner.viewmodel.PassphraseRequest
 import com.remotesigner.viewmodel.SignerInfo
+import com.remotesigner.viewmodel.TxInput
 import com.remotesigner.viewmodel.TxOutput
 
 object TestFixtures {
+    val sampleInputs = listOf(
+        TxInput(address = "tb1q...sender", amount = 6_236_567L),
+    )
+
     val sampleOutputs = listOf(
         TxOutput(
             address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
@@ -24,6 +31,7 @@ object TestFixtures {
     )
 
     val reviewState = AppState.TransactionReview(
+        inputs = sampleInputs,
         outputs = sampleOutputs,
         fee = 2_100L,
         totalSent = 5_000_000L,
@@ -33,6 +41,11 @@ object TestFixtures {
     )
 
     val signingState = AppState.Signing(message = "Confirm on your Trezor...")
+
+    val signingStateWithLog = AppState.Signing(
+        message = "Confirm on your Trezor...",
+        log = "Opening USB connection...\nClaiming interface...\nPython: Parsing PSBT...\n",
+    )
 
     val resultComplete = AppState.Result(
         isComplete = true,
@@ -46,4 +59,19 @@ object TestFixtures {
     )
 
     val errorState = AppState.Error(message = "USB device not found")
+
+    val noOpCallback = SigningCallbackImpl(
+        onStatusUpdate = { _ -> },
+        onPassphraseRequest = { _ -> },
+    )
+
+    val passphraseRequestOnDevice = PassphraseRequest(
+        availableOnDevice = true,
+        callback = noOpCallback,
+    )
+
+    val passphraseRequestPhoneOnly = PassphraseRequest(
+        availableOnDevice = false,
+        callback = noOpCallback,
+    )
 }
