@@ -50,12 +50,13 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 ```
 Kotlin/Jetpack Compose (thin shell)     Python backend (via Chaquopy)
 ┌──────────────────────────┐            ┌──────────────────────────┐
-│ UI Screens (4 screens)   │            │ psbt_parser (embit)      │
+│ UI Screens (5 screens)   │            │ psbt_parser (embit)      │
 │ SignerViewModel           │◄─bridge──►│ signer (trezorlib)       │
 │ USB Bridge (UsbRequest)  │            │ broadcaster (requests)   │
-│ File picker / intents    │            │ usb_transport (custom)   │
-└──────────┬───────────────┘            │ trezor_ui (callbacks)    │
-           │ USB-C OTG                  └──────────────────────────┘
+│ Nostr receiver (OkHttp)  │            │ usb_transport (custom)   │
+│ NFC reader / file picker │            │ trezor_ui (callbacks)    │
+└──────────┬───────────────┘            └──────────────────────────┘
+           │ USB-C OTG
      ┌─────▼─────┐
      │  Trezor   │
      │  Safe 3   │
@@ -159,7 +160,7 @@ adb wait-for-device
 ./gradlew connectedDebugAndroidTest
 ```
 
-Smoke tests verify all 4 screens render correctly and state-machine navigation works.
+Smoke tests verify all 5 screens render correctly and state-machine navigation works.
 
 ### Run Tests (Python, desktop)
 
@@ -193,25 +194,32 @@ Recorded cassettes are replayed by `tests/test_signing_e2e.py` — this tests th
 ## Project Structure
 
 ```
-app/src/androidTest/kotlin/com/remotesigner/
-│   ├── TestFixtures.kt             # Mock AppState instances for tests
-│   ├── AppLaunchTest.kt            # App launch smoke test
-│   ├── ScreenRenderTest.kt         # Screen render smoke tests
-│   └── NavigationTest.kt           # State machine navigation test
 app/src/main/
 ├── kotlin/com/remotesigner/
-│   ├── MainActivity.kt              # Entry point, intent handling
+│   ├── MainActivity.kt              # Entry point, intent/NFC handling
 │   ├── bridge/PythonBridge.kt       # Chaquopy bridge to Python
-│   ├── viewmodel/SignerViewModel.kt # State machine (Home→Review→Sign→Result)
+│   ├── viewmodel/SignerViewModel.kt # State machine (Home→Review→Sign→Result→Error)
 │   ├── usb/
+│   │   ├── SigningBridge.kt         # Interface for production/test USB access
 │   │   ├── TrezorUsbManager.kt     # Device discovery + USB permissions
 │   │   └── UsbBridge.kt            # 64-byte interrupt endpoint I/O
+│   ├── nostr/
+│   │   ├── NostrReceiver.kt        # WebSocket relay connection (OkHttp)
+│   │   ├── NostrKeyManager.kt      # Random secp256k1 keypair storage
+│   │   ├── Nip04.kt                # NIP-04 encryption/decryption
+│   │   ├── NostrEvent.kt           # Event model
+│   │   ├── NostrInbox.kt           # Inbox state management
+│   │   └── Bech32.kt               # Bech32 encoding (npub)
+│   ├── nfc/NdefTextParser.kt       # NFC NDEF text parsing (passphrase import)
 │   └── ui/
-│       ├── HomeScreen.kt           # File picker
+│       ├── AppNavigation.kt        # State-based routing (no NavController)
+│       ├── HomeScreen.kt           # Nostr QR code, file picker, inbox
 │       ├── TransactionReviewScreen.kt # TX details, change, fee, signers
-│       ├── SigningScreen.kt         # Progress spinner
+│       ├── SigningScreen.kt         # Progress + passphrase dialog
 │       ├── ResultScreen.kt          # Broadcast / export
-│       └── AppNavigation.kt        # State-based routing
+│       ├── ErrorScreen.kt          # Error display
+│       ├── InboxSection.kt         # Nostr inbox UI
+│       └── theme/Theme.kt          # Material 3 theming
 ├── python/remotesigner/
 │   ├── psbt_parser.py              # Parse PSBT, detect change outputs
 │   ├── signer.py                   # PSBT→trezorlib conversion + signing
@@ -223,12 +231,31 @@ app/src/main/
     ├── xml/usb_device_filter.xml   # Trezor USB vendor ID filter
     └── xml/file_paths.xml          # FileProvider for PSBT export
 
+app/src/androidTest/kotlin/com/remotesigner/
+├── AppLaunchTest.kt                # App launch smoke test
+├── ScreenRenderTest.kt             # Screen render smoke tests
+├── NavigationTest.kt               # State machine navigation test
+├── ChaquopyE2ETest.kt              # Chaquopy + cassette replay E2E tests
+├── InboxScreenTest.kt              # Nostr inbox UI tests
+├── Nip04Test.kt                    # NIP-04 encryption tests
+├── NostrReceiverTest.kt            # WebSocket receiver tests
+├── NostrKeyManagerTest.kt          # Key storage tests
+├── Bech32Test.kt                   # Bech32 encoding tests
+├── PlaybackBridge.kt               # Cassette replay bridge (SigningBridge impl)
+└── TestFixtures.kt                 # Mock AppState instances for tests
+
+app/src/test/kotlin/com/remotesigner/
+└── nfc/NdefTextParserTest.kt       # NFC NDEF parsing (JVM, no emulator needed)
+
 nostr_signer/                          # Electrum plugin (see below)
 ├── manifest.json                      # Plugin metadata (v0.2.1)
+├── __init__.py                        # Package marker
 ├── nostr_signer.py                    # Standalone NIP-04 crypto
-└── qt.py                              # Electrum Qt UI hooks + relay publishing
+├── qt.py                              # Electrum Qt UI hooks + relay publishing
+└── README.md                          # Plugin documentation
 
 tests/
+├── conftest.py                     # pytest configuration
 ├── desktop_bridge.py               # DesktopUsbBridge, RecordingBridge, PlaybackBridge
 ├── sign_cli.py                     # CLI for desktop signing + cassette recording
 ├── test_signing_e2e.py             # E2E tests replaying recorded cassettes
@@ -236,10 +263,15 @@ tests/
 ├── test_signer.py                  # Signer module tests
 ├── test_broadcaster.py             # Broadcasting tests
 ├── test_usb_transport.py           # USB transport tests
+├── test_trezor_ui.py               # Trezor UI callback tests
 ├── test_desktop_bridge.py          # Desktop bridge unit tests
+├── test_nostr_signer.py            # Electrum plugin crypto tests
 ├── cassettes/                      # Recorded USB exchange JSON files
-│   └── single-sig-p2wpkh.json
+│   ├── single-sig-p2wpkh.json
+│   └── multisig-testnet3.json
 └── psbts/                          # Test PSBT files
+    ├── singlesig_testnet3.psbt
+    └── multisig_testnet3.psbt
 ```
 
 ## Dependencies
@@ -253,6 +285,9 @@ tests/
 - Jetpack Compose with Material 3
 - Android USB Host API
 - Chaquopy 17.0.0
+- OkHttp 4.12.0 — WebSocket client for Nostr relay connections
+- secp256k1-kmp 0.22.0 — secp256k1 ECDH for NIP-04 decryption
+- ZXing 3.5.3 — QR code generation for npub display
 
 ## Security
 
@@ -286,9 +321,16 @@ One-way push: Electrum sends, the app receives and signs.
 Package as a zip and import via **Tools → Plugins → Add Plugin**:
 
 ```bash
-# From the Electrum source tree
+# Option 1: Using Electrum's packaging script (from the Electrum source tree)
 ./contrib/make_plugin /path/to/remote_signer/nostr_signer
+
+# Option 2: Create the zip manually
+cd /path/to/remote_signer
+zip -r nostr_signer-0.2.1.zip nostr_signer/ \
+  -x "nostr_signer/__pycache__/*" "nostr_signer/*.pyc"
 ```
+
+Then import `nostr_signer-0.2.1.zip` in Electrum: **Tools → Plugins → Add Plugin**.
 
 For development, symlink into Electrum's plugin directory:
 
