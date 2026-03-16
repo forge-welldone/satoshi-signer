@@ -4,7 +4,7 @@
 
 # Satoshi Signer
 
-An Android app that imports unsigned Bitcoin PSBTs (Partially Signed Bitcoin Transactions), signs them with a Trezor hardware wallet connected via USB-C, and broadcasts the signed transaction to the Bitcoin network.
+An Android app that imports unsigned Bitcoin PSBTs (Partially Signed Bitcoin Transactions) — via file picker, Nostr relay, or clipboard — signs them with a Trezor hardware wallet connected via USB-C (with passphrase entry on-device, on-phone, or via NFC tag), and broadcasts the signed transaction to the Bitcoin network.
 
 ## Screenshots
 

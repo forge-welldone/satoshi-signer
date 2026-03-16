@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Satoshi Signer — an Android app for signing Bitcoin PSBTs with a Trezor hardware wallet via USB-C. Kotlin/Compose UI talks to Python backend (embedded via Chaquopy) which handles PSBT parsing, Trezor signing, and transaction broadcasting.
+Satoshi Signer — an Android app for signing Bitcoin PSBTs with a Trezor hardware wallet via USB-C. PSBTs arrive via file picker, Nostr relay, or clipboard; passphrase entry supports on-device, on-phone, or NFC tag import. Kotlin/Compose UI talks to Python backend (embedded via Chaquopy) which handles PSBT parsing, Trezor signing, and transaction broadcasting.
 
 ## Build & Test Commands
 
