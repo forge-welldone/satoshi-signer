@@ -232,11 +232,13 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun doSignWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
         fun log(msg: String) {
+            android.util.Log.d("SignerViewModel", "doSignWithBridge: $msg")
             val current = (_state.value as? AppState.Signing)?.log ?: ""
             _state.value = AppState.Signing(msg, log = current + msg + "\n")
         }
 
         try {
+            android.util.Log.d("SignerViewModel", "doSignWithBridge: ENTERED, bridge=${bridge::class.simpleName}")
             log("Starting Python signing (network=$network)...")
             val signingCallback = SigningCallbackImpl(
                 onStatusUpdate = { status ->
@@ -251,13 +253,22 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             )
             currentSigningCallback = signingCallback
 
+            android.util.Log.d("SignerViewModel", "doSignWithBridge: calling pythonBridge.signPsbt...")
             val result = withContext(Dispatchers.IO) {
-                pythonBridge.signPsbt(
-                    psbtBytes = psbtBytes,
-                    bridge = bridge,
-                    callback = signingCallback,
-                    network = network,
-                )
+                try {
+                    android.util.Log.d("SignerViewModel", "doSignWithBridge: on IO thread, calling signPsbt now")
+                    val r = pythonBridge.signPsbt(
+                        psbtBytes = psbtBytes,
+                        bridge = bridge,
+                        callback = signingCallback,
+                        network = network,
+                    )
+                    android.util.Log.d("SignerViewModel", "doSignWithBridge: signPsbt returned: ${r["status"]}")
+                    r
+                } catch (e: Exception) {
+                    android.util.Log.e("SignerViewModel", "doSignWithBridge: signPsbt THREW", e)
+                    throw e
+                }
             }
             _passphraseRequest.value = null
             currentSigningCallback = null
@@ -270,9 +281,12 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 "partial" -> {
+                    val psbtB64 = result["psbt"]?.toString()
                     _state.value = AppState.Result(
                         isComplete = false,
-                        updatedPsbt = result["psbt"] as? ByteArray,
+                        updatedPsbt = psbtB64?.let {
+                            android.util.Base64.decode(it, android.util.Base64.DEFAULT)
+                        },
                     )
                 }
                 else -> {
