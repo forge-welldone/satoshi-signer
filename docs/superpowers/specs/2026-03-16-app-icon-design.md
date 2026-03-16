@@ -10,15 +10,18 @@ The icon represents the app's core function: a hardware secure element (Trezor) 
 
 ### Color
 
-- **Gradient:** Amber `#D97706` → Rose `#E11D48`, diagonal (top-left to bottom-right)
+- **Gradient:** Linear, Amber `#D97706` → Rose `#E11D48`, diagonal from `(0, 0)` to `(108, 108)` on the 108dp canvas
 - **Glyph:** White (`#FFFFFF`), stroke-only lines
 
-### Glyph: Minimal Chip
+### Glyph: Minimal Chip (dimensions in dp, on 108×108dp canvas)
 
-- Rounded rectangle (chip body), centered in the safe zone
-- 3 connector traces per side (12 total), evenly spaced, extending outward from the chip body
-- Checkmark inside the chip body
-- All strokes white, consistent weight
+- **Chip body:** 44×44dp rounded rectangle, corner radius 8dp, centered at `(54, 54)`
+- **Stroke weight:** 2.5dp for chip body, 2dp for traces and checkmark
+- **Connector traces:** 3 per side (12 total), 10dp long, extending outward from the chip body
+  - Left/right traces at y = 44, 54, 64 (10dp spacing)
+  - Top/bottom traces at x = 44, 54, 64 (10dp spacing)
+- **Checkmark:** inside chip body, from `(43, 54)` → `(50, 61)` → `(67, 44)`, stroke weight 3dp
+- All strokes white, round line caps and joins
 
 ### Reference
 
@@ -57,10 +60,17 @@ Adaptive icons (API 26+) separate foreground and background layers. The launcher
 
 ### Legacy Fallback
 
-The app targets min SDK 28 (API 26+), so all devices support adaptive icons. No legacy PNG fallback is strictly required. However, for robustness:
+The app targets min SDK 28 (API 26+), so all devices support adaptive icons. No legacy PNG fallback is needed.
 
-- Generate static PNG composites at standard densities (mdpi through xxxhdpi) in `mipmap-*` directories as fallback
-- These are only used if a launcher somehow doesn't support adaptive icons
+### Monochrome Layer (Android 13+ Themed Icons)
+
+Android 13+ (API 33) supports a `<monochrome>` layer for themed icons, where the launcher applies the user's wallpaper color to a single-color silhouette. Since `targetSdk = 35`, provide a monochrome variant — the same chip glyph as the foreground, used as a silhouette mask.
+
+Add to both `ic_launcher.xml` and `ic_launcher_round.xml`:
+
+```xml
+<monochrome android:drawable="@drawable/ic_launcher_foreground" />
+```
 
 ### Manifest Changes
 
@@ -76,4 +86,5 @@ android:roundIcon="@mipmap/ic_launcher_round"
 - All glyph detail must remain legible at 48×48dp (smallest launcher icon size)
 - Stroke weights should be thick enough to survive downscaling — minimum 2dp effective
 - The gradient must look good under all launcher masks (circle, squircle, rounded square, teardrop)
-- Vector drawables only — no raster assets needed for the primary icon
+- Vector drawables only — no raster assets needed
+- The `res/drawable/` and `res/mipmap-anydpi-v26/` directories do not currently exist and must be created
