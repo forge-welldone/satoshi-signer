@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.ui.ErrorScreen
 import com.remotesigner.ui.ResultScreen
 import com.remotesigner.ui.SigningScreen
@@ -43,6 +44,7 @@ class ScreenRenderTest {
                     message = state.message,
                     log = state.log,
                     passphraseRequest = null,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -125,6 +127,7 @@ class ScreenRenderTest {
                     message = state.message,
                     log = state.log,
                     passphraseRequest = null,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -143,6 +146,7 @@ class ScreenRenderTest {
                     message = "Signing...",
                     log = "",
                     passphraseRequest = null,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -158,6 +162,7 @@ class ScreenRenderTest {
                     message = "Signing...",
                     log = "",
                     passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -178,6 +183,7 @@ class ScreenRenderTest {
                     message = "Signing...",
                     log = "",
                     passphraseRequest = TestFixtures.passphraseRequestPhoneOnly,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -195,6 +201,7 @@ class ScreenRenderTest {
                     message = "Signing...",
                     log = "",
                     passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -217,6 +224,7 @@ class ScreenRenderTest {
                     message = "Signing...",
                     log = "",
                     passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
                     onCancel = {},
                 )
             }
@@ -231,5 +239,107 @@ class ScreenRenderTest {
         // Choice screen should be back
         composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
         composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_showsNfcOption_whenAvailable() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
+                    nfcAvailable = true,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Read from NFC tag").assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_hidesNfcOption_whenUnavailable() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
+                    nfcAvailable = false,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Read from NFC tag").assertDoesNotExist()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_nfcWaitingScreen() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
+                    nfcAvailable = true,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Read from NFC tag").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Cancel").assertCountEquals(2)
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_nfcCancelReturnsToChoices() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
+                    nfcAvailable = true,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Read from NFC tag").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Cancel")[0].performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Read from NFC tag").assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_nfcErrorShown() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    accountPathRequest = null,
+                    nfcAvailable = true,
+                    nfcTagResult = NfcReadResult.Error("No text found on tag"),
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Read from NFC tag").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("No text found on tag").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
     }
 }
