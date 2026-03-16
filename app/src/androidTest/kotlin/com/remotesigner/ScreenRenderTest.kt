@@ -1,8 +1,11 @@
 package com.remotesigner
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.remotesigner.ui.ErrorScreen
 import com.remotesigner.ui.ResultScreen
 import com.remotesigner.ui.SigningScreen
@@ -142,5 +145,88 @@ class ScreenRenderTest {
             }
         }
         composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_onDeviceAvailable() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Passphrase Required").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Choose where to enter your passphrase:").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
+        // Both the dialog and SigningScreen have a "Cancel" — assert both exist
+        composeTestRule.onAllNodesWithText("Cancel").assertCountEquals(2)
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_phoneOnly() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestPhoneOnly,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Passphrase Required").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Less secure than on-device entry").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Submit").assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_switchToTextField() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    onCancel = {},
+                )
+            }
+        }
+        // Start on choice screen
+        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
+        // Tap "Enter on phone" to switch to text field
+        composeTestRule.onNodeWithText("Enter on phone").performClick()
+        composeTestRule.waitForIdle()
+        // Text field and Submit should now appear
+        composeTestRule.onNodeWithText("Less secure than on-device entry").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Submit").assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_passphraseDialog_backToChoices() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
+                    onCancel = {},
+                )
+            }
+        }
+        // Switch to text field
+        composeTestRule.onNodeWithText("Enter on phone").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Submit").assertIsDisplayed()
+        // Tap "Back" to return to choices
+        composeTestRule.onNodeWithText("Back").performClick()
+        composeTestRule.waitForIdle()
+        // Choice screen should be back
+        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
     }
 }
