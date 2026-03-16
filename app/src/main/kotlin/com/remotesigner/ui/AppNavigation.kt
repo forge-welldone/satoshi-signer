@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerViewModel
+import android.nfc.NfcAdapter
 import java.io.File
 
 @Composable
@@ -31,7 +32,9 @@ fun AppRoot(
     val inboxItems by viewModel.inboxItems.collectAsStateWithLifecycle()
     val relayCount by viewModel.relayConnectedCount.collectAsStateWithLifecycle()
     val relayStatuses by viewModel.relayStatuses.collectAsStateWithLifecycle()
+    val nfcTagResult by viewModel.nfcTagResult.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val nfcAvailable = remember { NfcAdapter.getDefaultAdapter(context) != null }
 
     var pendingSavePsbt by remember { mutableStateOf<ByteArray?>(null) }
     val saveLauncher = rememberLauncherForActivityResult(
@@ -74,6 +77,11 @@ fun AppRoot(
             log = s.log,
             passphraseRequest = passphraseRequest,
             accountPathRequest = accountPathRequest,
+            nfcAvailable = nfcAvailable,
+            nfcTagResult = nfcTagResult,
+            onStartNfcWaiting = { viewModel.startNfcWaiting() },
+            onStopNfcWaiting = { viewModel.stopNfcWaiting() },
+            onClearNfcResult = { viewModel.clearNfcResult() },
             onCancel = { viewModel.cancelSigning() },
         )
         is AppState.Result -> ResultScreen(
