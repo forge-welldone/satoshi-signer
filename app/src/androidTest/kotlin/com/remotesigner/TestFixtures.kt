@@ -74,4 +74,25 @@ object TestFixtures {
         availableOnDevice = false,
         callback = noOpCallback,
     )
+
+    val sampleInboxItems = listOf(
+        com.remotesigner.nostr.InboxItem(
+            id = "event1",
+            psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
+            label = "Payment to Alice",
+            amount = "0.00500000 BTC",
+            senderNpub = "npub1a3x7...k9f2",
+            receivedAt = System.currentTimeMillis() / 1000 - 120, // 2 min ago
+            status = com.remotesigner.nostr.InboxStatus.PENDING,
+        ),
+        com.remotesigner.nostr.InboxItem(
+            id = "event2",
+            psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
+            label = "Unsigned transaction",
+            amount = "0.10000000 BTC",
+            senderNpub = "npub1b4y8...m8g3",
+            receivedAt = System.currentTimeMillis() / 1000 - 900, // 15 min ago
+            status = com.remotesigner.nostr.InboxStatus.FAILED,
+        ),
+    )
 }

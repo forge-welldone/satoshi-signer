@@ -7,6 +7,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
 import com.remotesigner.bridge.SigningCallbackImpl
+import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.InboxStatus
+import com.remotesigner.nostr.NostrKeyManager
+import com.remotesigner.nostr.NostrReceiver
+import com.remotesigner.nostr.formatBtcAmount
 import com.remotesigner.usb.SigningBridge
 import com.remotesigner.usb.TrezorUsbManager
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -80,6 +86,59 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
     val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest.asStateFlow()
     private var currentSigningCallback: SigningCallbackImpl? = null
+
+    // --- Nostr inbox ---
+    val keyManager = NostrKeyManager(application)
+    private val _inboxItems = MutableStateFlow<List<InboxItem>>(emptyList())
+    val inboxItems: StateFlow<List<InboxItem>> = _inboxItems.asStateFlow()
+    private var currentSigningInboxId: String? = null
+
+    private val nostrReceiver = NostrReceiver(
+        keyManager = keyManager,
+        onItem = { item -> handleInboxEvent(item) },
+        scope = viewModelScope,
+    )
+
+    val relayConnectedCount: StateFlow<Int> = nostrReceiver.connectedCount
+
+    private fun handleInboxEvent(item: InboxItem) {
+        viewModelScope.launch {
+            // Parse PSBT to extract display amount
+            val enrichedItem = try {
+                val result = withContext(Dispatchers.IO) {
+                    pythonBridge.parsePsbt(item.psbtBytes)
+                }
+                @Suppress("UNCHECKED_CAST")
+                val outputs = result["outputs"] as? List<Map<String, Any?>> ?: emptyList()
+                val totalSent = outputs
+                    .filter { it["is_change"] as? Boolean != true }
+                    .sumOf { (it["amount"] as? Number)?.toLong() ?: 0L }
+                item.copy(amount = formatBtcAmount(totalSent))
+            } catch (_: Exception) {
+                item // Keep without amount if parsing fails
+            }
+            _inboxItems.update { current -> current + enrichedItem }
+        }
+    }
+
+    fun signInboxItem(item: InboxItem) {
+        currentSigningInboxId = item.id
+        updateInboxItemStatus(item.id, InboxStatus.SIGNING)
+        loadPsbt(item.psbtBytes)
+    }
+
+    fun deleteInboxItem(id: String) {
+        _inboxItems.update { current -> current.filter { it.id != id } }
+    }
+
+    private fun updateInboxItemStatus(id: String, status: InboxStatus) {
+        _inboxItems.update { current ->
+            current.map { if (it.id == id) it.copy(status = status) else it }
+        }
+    }
+
+    fun startNostrReceiver() = nostrReceiver.connect()
+    fun stopNostrReceiver() = nostrReceiver.disconnect()
 
     fun loadPsbt(uri: Uri) {
         viewModelScope.launch {
@@ -347,6 +406,17 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun goHome() {
+        // Update inbox item status based on signing result
+        val inboxId = currentSigningInboxId
+        if (inboxId != null) {
+            val currentState = _state.value
+            when (currentState) {
+                is AppState.Result -> updateInboxItemStatus(inboxId, InboxStatus.SIGNED)
+                is AppState.Error -> updateInboxItemStatus(inboxId, InboxStatus.FAILED)
+                else -> {}
+            }
+            currentSigningInboxId = null
+        }
         currentPsbtBytes = null
         _state.value = AppState.Home
     }
