@@ -51,6 +51,7 @@ Android test setup requires a running emulator: `emulator -avd test_device -no-a
 Compose UI (5 screens) → SignerViewModel (sealed class state machine)
     → PythonBridge (Chaquopy) → Python modules
     → TrezorUsbManager / UsbBridge (Android USB Host API)
+    → NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
 ```
 
 **State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error`). UI renders the screen matching current state.
@@ -69,7 +70,8 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 
 ## Source Layout
 
-- `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge)
+- `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge, Nostr)
+- `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
 - `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
@@ -84,6 +86,9 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **trezor 0.13.9** (Python) — Official Trezor signing library
 - **embit ≥0.7** (Python) — Lightweight PSBT parsing
 - **Compose BOM 2024.12.01** — Jetpack Compose UI
+- **OkHttp 4.12.0** — WebSocket client for Nostr relay connections
+- **secp256k1-kmp 0.22.0** (`fr.acinq.secp256k1:secp256k1-kmp-jni-android`) — secp256k1 ECDH for NIP-04 decryption. Lightweight JNI wrapper around Bitcoin's libsecp256k1.
+- **ZXing 3.5.3** (`com.google.zxing:core`) — QR code generation for npub display
 - Versions managed in `gradle/libs.versions.toml`
 
 ## Design Decisions to Preserve
@@ -96,6 +101,10 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **Safe 3 PIN is on-device only** — No host-side PIN matrix. `get_pin()` raises. Passphrase entry is user's choice: on-device (default) or on-phone. When trezorlib calls `get_passphrase()`, a dialog lets the user choose. `SigningCallbackImpl` bridges the UI via a `LinkedBlockingQueue`.
 - **Screen stays on during signing** — `FLAG_KEEP_SCREEN_ON` is set while the Signing screen is displayed. Android suspends USB when the screen locks, killing the Trezor connection mid-signing.
 - **USB_DEVICE_ATTACHED intent filter required** — The manifest must declare the USB device filter so our app claims the Trezor when plugged in. Without it, other apps (e.g., Trezor Suite) steal the USB device exclusively. `singleTask` launch mode prevents activity recreation when the intent fires. The ViewModel polls for device attachment when the Trezor isn't connected yet.
+- **Nostr PSBT delivery** — PSBTs can be received from Electrum over Nostr relays (kind 4 events, NIP-04 encryption). `NostrReceiver` connects via OkHttp WebSocket in `onStart()`/`onStop()`. No background service — PSBTs wait on the relay.
+- **Nostr keypair is transport identity only** — Random secp256k1 key in SharedPreferences (`nostr_keys`). Not a signing key, protects nothing of value. npub displayed on Home screen as QR + copyable text for sharing with Electrum.
+- **secp256k1-kmp ECDH for NIP-04** — `Secp256k1.get().ecdh(priv, pub)` returns the raw 32-byte x-coordinate of the ECDH point (not SHA-256 hashed), used directly as the AES-256-CBC key per NIP-04 convention. The 0x02 prefix is always used for x-only pubkeys (even parity assumption — works because ECDH result only depends on x-coordinate).
+- **Inbox is in-memory** — `_inboxItems: MutableStateFlow<List<InboxItem>>` in ViewModel, separate from the navigation `_state`. Killed process loses inbox; events are re-fetchable from relay within 24h. Deduplication by Nostr event ID.
 
 ## Development Practices
 
