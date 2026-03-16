@@ -9,15 +9,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nfc.parseNdefTextPayload
 import com.remotesigner.ui.AppRoot
 import com.remotesigner.ui.theme.SatoshiSignerTheme
 import com.remotesigner.viewmodel.SignerViewModel
-import kotlinx.coroutines.launch
 import java.io.IOException
 
 class MainActivity : ComponentActivity() {
@@ -36,15 +32,6 @@ class MainActivity : ComponentActivity() {
                 AppRoot(viewModel = viewModel, intentPsbtBytes = psbtBytes)
             }
         }
-
-        // Observe nfcWaitingForTag and enable/disable reader mode accordingly
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                viewModel.nfcWaitingForTag.collect { waiting ->
-                    if (waiting) enableNfcReaderMode() else disableNfcReaderMode()
-                }
-            }
-        }
     }
 
     override fun onStart() {
@@ -57,9 +44,15 @@ class MainActivity : ComponentActivity() {
         viewModel.stopNostrReceiver()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Claim exclusive NFC access while in foreground to prevent other apps
+        // (e.g. Wallet of Satoshi) from intercepting tags and stealing focus.
+        enableNfcReaderMode()
+    }
+
     override fun onPause() {
         super.onPause()
-        // Safety net: disable reader mode when Activity pauses
         disableNfcReaderMode()
     }
 
@@ -83,6 +76,9 @@ class MainActivity : ComponentActivity() {
 
     private fun onTagDiscovered(tag: Tag) {
         // Runs on binder thread — only post to StateFlow, no UI operations
+        // Silently consume tags when not waiting for NFC input
+        if (!viewModel.nfcWaitingForTag.value) return
+
         val ndef = Ndef.get(tag)
         if (ndef == null) {
             viewModel.onNfcTagResult(

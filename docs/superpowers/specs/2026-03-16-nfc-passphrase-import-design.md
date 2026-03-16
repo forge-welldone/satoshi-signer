@@ -96,10 +96,9 @@ Flags: `FLAG_READER_NFC_A or FLAG_READER_NFC_B or FLAG_READER_NFC_F or FLAG_READ
    - `nfcWaitingForTag: StateFlow<Boolean>` — true when NFC waiting screen is displayed.
    - `nfcTagResult: MutableStateFlow<NfcReadResult?>` — sealed class: `Success(passphrase: String)` or `Error(message: String)`.
 
-2. **MainActivity** observes `nfcWaitingForTag`:
-   - `true` → `nfcAdapter.enableReaderMode(activity, callback, flags, null)`
-   - `false` → `nfcAdapter.disableReaderMode(activity)`
-   - Safety net: also call `disableReaderMode()` in `onPause()` and re-enable in `onResume()` if `nfcWaitingForTag` is still true. Prevents leaked reader mode if Activity is destroyed/recreated.
+2. **MainActivity** enables reader mode unconditionally in `onResume()`, disables in `onPause()`:
+   - Reader mode is always active while the Activity is in the foreground. This prevents other NFC-handling apps (e.g. Wallet of Satoshi) from intercepting tags via normal NFC dispatch and stealing focus.
+   - The `onTagDiscovered` callback checks `nfcWaitingForTag.value` and silently ignores tags when not waiting — the tag is consumed (no dispatch to other apps) but not acted on.
 
 3. **Reader callback** (runs on binder thread — must not touch UI-thread-only state):
    - Opens `Ndef` tech on the tag (if `Ndef.get(tag)` returns null, tag is not NDEF-capable → post error).
@@ -114,17 +113,20 @@ Flags: `FLAG_READER_NFC_A or FLAG_READER_NFC_B or FLAG_READER_NFC_F or FLAG_READ
 ### Data Flow
 
 ```
+Reader mode is always active while Activity is resumed (prevents other apps stealing NFC)
+
 PassphraseDialog: user selects "Read from NFC tag"
   → ViewModel sets nfcWaitingForTag = true
-  → MainActivity enables reader mode
   → User taps NFC tag
+  → Reader callback checks nfcWaitingForTag == true → processes tag
   → Reader callback reads NDEF text record
   → ViewModel sets nfcTagResult = Success(passphrase)
   → PassphraseDialog calls callback.submitPassphrase(passphrase)
   → LinkedBlockingQueue unblocks Python thread
   → trezorlib receives passphrase, signing continues
   → ViewModel sets nfcWaitingForTag = false
-  → MainActivity disables reader mode
+
+(Tags tapped when nfcWaitingForTag == false are silently consumed)
 ```
 
 ### NDEF Text Record Parsing
@@ -152,7 +154,7 @@ Extract into a pure function `parseNdefTextPayload(payload: ByteArray): String?`
 | Tag has NDEF but no text record | Show "No text found on tag" toast, stay on waiting screen |
 | NFC read throws IOException | Show "Failed to read tag — try again" toast, stay on waiting screen |
 | Empty string read from tag | Show "Tag contains an empty passphrase" toast, stay on waiting screen (user chose NFC explicitly — silently falling through to on-device entry would be confusing) |
-| User cancels | Return to choice screen, disable reader mode |
+| User cancels | Return to choice screen (reader mode stays active to block other apps) |
 | Timeout (60 seconds) | Auto-cancel back to choice screen with "Timed out waiting for NFC tag" message |
 
 ### Files Changed
@@ -161,7 +163,7 @@ Extract into a pure function `parseNdefTextPayload(payload: ByteArray): String?`
 |------|--------|
 | `AndroidManifest.xml` | Add NFC permission and feature |
 | `SignerViewModel.kt` | Add `nfcWaitingForTag`, `nfcTagResult` state flows and methods |
-| `MainActivity.kt` | Observe `nfcWaitingForTag`, enable/disable reader mode, post results |
+| `MainActivity.kt` | Enable reader mode in `onResume()`/`onPause()`, ignore tags when not waiting, post results |
 | `SigningScreen.kt` | Update `PassphraseDialog` with NFC option and waiting screen |
 
 ### Files NOT Changed
