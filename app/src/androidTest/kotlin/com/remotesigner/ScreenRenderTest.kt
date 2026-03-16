@@ -109,4 +109,38 @@ class ScreenRenderTest {
         composeTestRule.onNodeWithText(longMessage).assertIsDisplayed()
         composeTestRule.onNodeWithText("Back to Home").assertIsDisplayed()
     }
+
+    @Test
+    fun signingScreen_displaysLogAndCopyButton() {
+        val state = TestFixtures.signingStateWithLog
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = state.message,
+                    log = state.log,
+                    passphraseRequest = null,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText(state.message).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Debug Log:").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Copy").assertIsDisplayed()
+        composeTestRule.onNodeWithText(state.log).assertIsDisplayed()
+    }
+
+    @Test
+    fun signingScreen_displaysCancelButton() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                SigningScreen(
+                    message = "Signing...",
+                    log = "",
+                    passphraseRequest = null,
+                    onCancel = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+    }
 }
