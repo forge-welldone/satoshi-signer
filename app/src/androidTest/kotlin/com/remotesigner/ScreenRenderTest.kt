@@ -58,6 +58,7 @@ class ScreenRenderTest {
                     state = TestFixtures.resultComplete,
                     onBroadcast = {},
                     onExportPsbt = {},
+                    onSavePsbt = {},
                     onHome = {},
                 )
             }
@@ -73,12 +74,14 @@ class ScreenRenderTest {
                     state = TestFixtures.resultPartial,
                     onBroadcast = {},
                     onExportPsbt = {},
+                    onSavePsbt = {},
                     onHome = {},
                 )
             }
         }
         composeTestRule.onNodeWithText("Signature Added").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Export Updated PSBT").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Share Updated PSBT").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save to Phone").assertIsDisplayed()
     }
 
     @Test

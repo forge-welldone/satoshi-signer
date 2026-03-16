@@ -1,6 +1,9 @@
 package com.remotesigner.ui
 
 import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +28,23 @@ fun AppRoot(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val passphraseRequest by viewModel.passphraseRequest.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    var pendingSavePsbt by remember { mutableStateOf<ByteArray?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(pendingSavePsbt ?: return@rememberLauncherForActivityResult)
+                } ?: throw IllegalStateException("Could not open output stream")
+                Toast.makeText(context, "PSBT saved", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        pendingSavePsbt = null
+    }
 
     LaunchedEffect(intentPsbtBytes) {
         intentPsbtBytes?.let { viewModel.loadPsbt(it) }
@@ -60,6 +80,10 @@ fun AppRoot(
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 context.startActivity(Intent.createChooser(shareIntent, "Export PSBT"))
+            },
+            onSavePsbt = { psbt ->
+                pendingSavePsbt = psbt
+                saveLauncher.launch("partially-signed.psbt")
             },
             onHome = { viewModel.goHome() },
         )

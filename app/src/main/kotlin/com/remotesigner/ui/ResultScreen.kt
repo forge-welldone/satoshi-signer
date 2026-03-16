@@ -17,6 +17,7 @@ fun ResultScreen(
     state: AppState.Result,
     onBroadcast: () -> Unit,
     onExportPsbt: (ByteArray) -> Unit,
+    onSavePsbt: (ByteArray) -> Unit,
     onHome: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -78,7 +79,14 @@ fun ResultScreen(
                         onClick = { onExportPsbt(psbt) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Export Updated PSBT")
+                        Text("Share Updated PSBT")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { onSavePsbt(psbt) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Save to Phone")
                     }
                 }
             }

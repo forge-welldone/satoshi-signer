@@ -42,6 +42,7 @@ class NavigationTest {
                         state = current,
                         onBroadcast = {},
                         onExportPsbt = {},
+                        onSavePsbt = {},
                         onHome = {},
                     )
                     is AppState.Error -> Unit
