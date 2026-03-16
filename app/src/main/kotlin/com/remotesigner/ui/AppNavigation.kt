@@ -63,28 +63,9 @@ fun AppRoot(
             },
             onHome = { viewModel.goHome() },
         )
-        is AppState.Error -> {
-            val clipContext = context
-            Surface(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-                    Text("Error", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(s.message, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { viewModel.goHome() }) {
-                            Text("Back to Home")
-                        }
-                        OutlinedButton(onClick = {
-                            val clipboard = clipContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("error", s.message))
-                            android.widget.Toast.makeText(clipContext, "Copied", android.widget.Toast.LENGTH_SHORT).show()
-                        }) {
-                            Text("Copy Error")
-                        }
-                    }
-                }
-            }
-        }
+        is AppState.Error -> ErrorScreen(
+            message = s.message,
+            onHome = { viewModel.goHome() },
+        )
     }
 }
