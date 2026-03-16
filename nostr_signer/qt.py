@@ -94,10 +94,26 @@ class Plugin(BasePlugin, Logger):
     # ------------------------------------------------------------------
 
     def _on_send(self, d: 'TxDialog'):
+        try:
+            self._do_send(d)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                window = d.main_window if hasattr(d, 'main_window') else d.parent()
+                window.show_error(_("Nostr Signer error: {}").format(str(e)))
+            except Exception:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.critical(d, _("Error"), str(e))
+
+    def _do_send(self, d: 'TxDialog'):
         wallet = d.wallet
+        # Get window from dialog (works even if load_wallet hook wasn't called)
         window = self.windows.get(wallet)
         if not window:
-            return
+            window = d.main_window if hasattr(d, 'main_window') else d.parent()
+            self.windows[wallet] = window
+            self._ensure_keypair(wallet)
 
         recipient_npub = wallet.db.get(WK_RECIPIENT_NPUB)
         if not recipient_npub:
