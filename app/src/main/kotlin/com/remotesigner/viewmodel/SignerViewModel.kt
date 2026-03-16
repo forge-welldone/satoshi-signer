@@ -2,12 +2,13 @@ package com.remotesigner.viewmodel
 
 import android.app.Application
 import android.net.Uri
+import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
 import com.remotesigner.bridge.SigningCallbackImpl
+import com.remotesigner.usb.SigningBridge
 import com.remotesigner.usb.TrezorUsbManager
-import com.remotesigner.usb.UsbBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Job
@@ -74,7 +75,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var currentPsbtBytes: ByteArray? = null
     private var currentNetwork: String = "main"
-    private var currentUsbBridge: UsbBridge? = null
+    private var currentUsbBridge: SigningBridge? = null
     private var signingJob: Job? = null
     private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
     val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest.asStateFlow()
@@ -205,61 +206,89 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.IO) { bridge.open() }
                 log("USB bridge opened OK")
 
-                log("Starting Python signing (network=$currentNetwork)...")
-                val signingCallback = SigningCallbackImpl(
-                    onStatusUpdate = { status ->
-                        viewModelScope.launch { log("Python: $status") }
-                    },
-                    onPassphraseRequest = { availableOnDevice ->
-                        // Safe: currentSigningCallback is assigned on the next line,
-                        // and this lambda is only called from Python during signing.
-                        _passphraseRequest.value = PassphraseRequest(
-                            availableOnDevice, currentSigningCallback!!
-                        )
-                    },
-                    onPassphraseSubmitted = { _passphraseRequest.value = null },
-                )
-                currentSigningCallback = signingCallback
-
-                val result = withContext(Dispatchers.IO) {
-                    pythonBridge.signPsbt(
-                        psbtBytes = psbt,
-                        bridge = bridge,
-                        callback = signingCallback,
-                        network = currentNetwork,
-                    )
-                }
-                _passphraseRequest.value = null
-                currentSigningCallback = null
-
-                when (result["status"]) {
-                    "complete" -> {
-                        _state.value = AppState.Result(
-                            isComplete = true,
-                            rawHex = result["raw_tx"]?.toString(),
-                        )
-                    }
-                    "partial" -> {
-                        _state.value = AppState.Result(
-                            isComplete = false,
-                            updatedPsbt = result["psbt"] as? ByteArray,
-                        )
-                    }
-                    else -> {
-                        _state.value = AppState.Error(
-                            result["message"]?.toString() ?: "Signing failed"
-                        )
-                    }
-                }
+                // Delegate signing to shared suspend function
+                doSignWithBridge(bridge, psbt, currentNetwork)
             } catch (e: Exception) {
-                val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
-                _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
+                // Only catches USB open failures — doSignWithBridge has its own try/catch
+                if (_state.value is AppState.Signing) {
+                    val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
+                    _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
+                }
             } finally {
-                _passphraseRequest.value = null
-                currentSigningCallback = null
+                // Safety net: if doSignWithBridge didn't run, ensure bridge is closed
                 currentUsbBridge?.close()
                 currentUsbBridge = null
             }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun signWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
+        _state.value = AppState.Signing("Signing...", log = "")
+        signingJob = viewModelScope.launch {
+            doSignWithBridge(bridge, psbtBytes, network)
+        }
+    }
+
+    private suspend fun doSignWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
+        fun log(msg: String) {
+            val current = (_state.value as? AppState.Signing)?.log ?: ""
+            _state.value = AppState.Signing(msg, log = current + msg + "\n")
+        }
+
+        try {
+            log("Starting Python signing (network=$network)...")
+            val signingCallback = SigningCallbackImpl(
+                onStatusUpdate = { status ->
+                    viewModelScope.launch { log("Python: $status") }
+                },
+                onPassphraseRequest = { availableOnDevice ->
+                    _passphraseRequest.value = PassphraseRequest(
+                        availableOnDevice, currentSigningCallback!!
+                    )
+                },
+                onPassphraseSubmitted = { _passphraseRequest.value = null },
+            )
+            currentSigningCallback = signingCallback
+
+            val result = withContext(Dispatchers.IO) {
+                pythonBridge.signPsbt(
+                    psbtBytes = psbtBytes,
+                    bridge = bridge,
+                    callback = signingCallback,
+                    network = network,
+                )
+            }
+            _passphraseRequest.value = null
+            currentSigningCallback = null
+
+            when (result["status"]) {
+                "complete" -> {
+                    _state.value = AppState.Result(
+                        isComplete = true,
+                        rawHex = result["raw_tx"]?.toString(),
+                    )
+                }
+                "partial" -> {
+                    _state.value = AppState.Result(
+                        isComplete = false,
+                        updatedPsbt = result["psbt"] as? ByteArray,
+                    )
+                }
+                else -> {
+                    _state.value = AppState.Error(
+                        result["message"]?.toString() ?: "Signing failed"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
+            _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
+        } finally {
+            _passphraseRequest.value = null
+            currentSigningCallback = null
+            bridge.close()
+            currentUsbBridge = null
         }
     }
 
