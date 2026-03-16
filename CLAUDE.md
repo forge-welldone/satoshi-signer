@@ -48,7 +48,7 @@ Android test setup requires a running emulator: `emulator -avd test_device -no-a
 **Two-language bridge pattern:** Kotlin handles UI, USB, and Android lifecycle. Python handles all Bitcoin logic (PSBT parsing, trezorlib signing, broadcasting). They communicate via Chaquopy.
 
 ```
-Compose UI (4 screens) → SignerViewModel (sealed class state machine)
+Compose UI (5 screens) → SignerViewModel (sealed class state machine)
     → PythonBridge (Chaquopy) → Python modules
     → TrezorUsbManager / UsbBridge (Android USB Host API)
 ```
@@ -71,7 +71,8 @@ Compose UI (4 screens) → SignerViewModel (sealed class state machine)
 
 - `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge)
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
-- `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented smoke tests (Compose UI)
+- `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
+- `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
@@ -91,6 +92,7 @@ Compose UI (4 screens) → SignerViewModel (sealed class state machine)
 - **Stateless app** — No database, no wallet storage, no caching. Killed process just loses the in-progress transaction.
 - **App never touches private keys** — All signing happens on Trezor's secure element. No seed phrases or key material on phone.
 - **Python modules are desktop-testable** — The bridge pattern keeps Python code Android-agnostic so `pytest` works without an emulator. Desktop signing uses `DesktopUsbBridge` (WebUSB/HID) in place of Kotlin's `UsbBridge`. Recorded USB cassettes enable E2E test replay without hardware.
+- **`SigningBridge` interface** — Common interface (`open`/`close`/`writeChunk`/`readChunk`) implemented by `UsbBridge` (production) and `PlaybackBridge` (tests). Enables cassette-driven E2E tests on the Android emulator via `signWithBridge()`. Test path passes `null` callback to avoid passphrase dialog deadlock (Python falls back to on-device passphrase).
 - **Safe 3 PIN is on-device only** — No host-side PIN matrix. `get_pin()` raises. Passphrase entry is user's choice: on-device (default) or on-phone. When trezorlib calls `get_passphrase()`, a dialog lets the user choose. `SigningCallbackImpl` bridges the UI via a `LinkedBlockingQueue`.
 - **Screen stays on during signing** — `FLAG_KEEP_SCREEN_ON` is set while the Signing screen is displayed. Android suspends USB when the screen locks, killing the Trezor connection mid-signing.
 - **USB_DEVICE_ATTACHED intent filter required** — The manifest must declare the USB device filter so our app claims the Trezor when plugged in. Without it, other apps (e.g., Trezor Suite) steal the USB device exclusively. `singleTask` launch mode prevents activity recreation when the intent fires. The ViewModel polls for device attachment when the Trezor isn't connected yet.
