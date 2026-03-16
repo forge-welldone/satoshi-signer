@@ -10,14 +10,15 @@ Hide the debug log section behind a "Show Log" toggle on the signing screen. The
 
 ## Design
 
-### UI Change (SigningScreen.kt, lines 105-129)
+### UI Change (SigningScreen.kt, `if (log.isNotBlank())` block)
 
 Replace the always-visible debug log block with:
 
 1. A local `var showLog by remember { mutableStateOf(false) }` — starts collapsed every signing session.
-2. When `log.isNotBlank()`, render a `TextButton("Show Log")` / `TextButton("Hide Log")` toggle instead of immediately showing the log.
-3. When `showLog == true`, render the existing debug log section (divider, "Debug Log:" label, copy button, monospace text).
+2. When `log.isNotBlank()`, render a `TextButton("Show Log")` / `TextButton("Hide Log")` toggle below the Cancel button (same 24dp spacer position as the current log section). No divider when collapsed — just the text button.
+3. When `showLog == true`, render the existing debug log section below the toggle (divider, "Debug Log:" label, copy button, monospace text).
 4. When `showLog == false`, only the toggle button is visible.
+5. When `log.isBlank()`, neither the toggle nor the log section appears (unchanged behavior).
 
 ### What stays the same
 
@@ -28,6 +29,9 @@ Replace the always-visible debug log block with:
 
 ## Testing
 
-- Compose UI test: debug log text is not displayed by default when log content exists.
-- Compose UI test: tapping "Show Log" reveals the log content.
-- Compose UI test: tapping "Hide Log" hides it again.
+Update existing `signingScreen_displaysLogAndCopyButton` test — it currently asserts the log is immediately visible, which will break. Replace it with:
+
+- Test: when log content exists, "Show Log" button is visible but debug log text and "Copy" button are not displayed.
+- Test: tapping "Show Log" reveals the debug log text, "Copy" button, and changes toggle to "Hide Log".
+- Test: tapping "Hide Log" hides the log content again.
+- Preserve: existing `signingScreen_displaysProgress` test (empty log case) should continue to pass unchanged.
