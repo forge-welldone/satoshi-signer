@@ -65,19 +65,21 @@ Chaquopy proxies the object to Python regardless of Kotlin type — Python duck-
 
 ### 3. Extract `signWithBridge()` from `SignerViewModel`
 
-Split `signWithTrezor()` into USB acquisition and signing phases:
+Split `signWithTrezor()` into USB acquisition and signing phases. `signWithBridge()` accepts all required parameters explicitly so it does not depend on ViewModel internal state:
 
 ```kotlin
 fun signWithTrezor() {
+    val psbt = currentPsbtBytes ?: return
     // 1. Find Trezor device (poll if needed)
     // 2. Request USB permission
     // 3. Open UsbBridge, log device info, claim interface
-    // 4. Delegate:
-    signWithBridge(bridge)
+    // 4. Set currentUsbBridge = bridge (for cancelSigning())
+    // 5. Delegate:
+    signWithBridge(bridge, psbt, currentNetwork)
 }
 
 @VisibleForTesting
-internal fun signWithBridge(bridge: SigningBridge) {
+internal fun signWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
     _state.value = AppState.Signing("Signing...", log = "")
     signingJob = viewModelScope.launch {
         fun log(msg: String) { /* same as today */ }
@@ -92,24 +94,36 @@ internal fun signWithBridge(bridge: SigningBridge) {
             currentSigningCallback = signingCallback
 
             val result = withContext(Dispatchers.IO) {
-                pythonBridge.signPsbt(psbt, bridge, signingCallback, currentNetwork)
+                pythonBridge.signPsbt(psbtBytes, bridge, signingCallback, network)
             }
             _passphraseRequest.value = null
             currentSigningCallback = null
 
-            // Handle result → AppState.Result or AppState.Error (same as today)
+            // Entire result-handling block moves here from signWithTrezor():
+            when (result["status"]) {
+                "complete" -> _state.value = AppState.Result(isComplete = true, rawHex = result["raw_tx"]?.toString())
+                "partial" -> _state.value = AppState.Result(isComplete = false, updatedPsbt = result["psbt"] as? ByteArray)
+                else -> _state.value = AppState.Error(result["message"]?.toString() ?: "Signing failed")
+            }
         } catch (e: Exception) {
-            // → AppState.Error (same as today)
+            val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
+            _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
         } finally {
             _passphraseRequest.value = null
             currentSigningCallback = null
             bridge.close()  // no-op for PlaybackBridge, real close for UsbBridge
+            currentUsbBridge = null  // clear so cancelSigning() doesn't double-close
         }
     }
 }
 ```
 
-`signWithTrezor()` retains USB-specific logic (device discovery, permission, `dumpDeviceInfo()`, `bridge.open()`). `signWithBridge()` is the testable signing path.
+**Key decisions:**
+- `signWithBridge()` takes `psbtBytes` and `network` as parameters, making it self-contained and testable without needing to call `loadPsbt()` first.
+- `signWithTrezor()` sets `currentUsbBridge = bridge` before delegating (for `cancelSigning()` to work). `signWithBridge()` clears it in `finally`.
+- `signWithTrezor()` retains USB-specific logic (device discovery, permission, `dumpDeviceInfo()`, `bridge.open()`). `signWithBridge()` is the testable signing path.
+
+**Thread safety note:** `_state` and `_passphraseRequest` are `MutableStateFlow` (thread-safe). The `onStatusUpdate` lambda is called from Python's IO thread via Chaquopy, while state reads happen on the main thread. This is safe because `StateFlow.value` is atomic.
 
 ### 4. Kotlin `PlaybackBridge` (test code)
 
@@ -170,37 +184,104 @@ These are static copies. When new cassettes are recorded, they must be copied ma
 
 ```kotlin
 // app/src/androidTest/kotlin/com/remotesigner/ChaquopyE2ETest.kt
+@LargeTest
 class ChaquopyE2ETest {
-    @get:Rule val composeTestRule = createComposeRule()
+    @get:Rule val composeTestRule = createAndroidComposeRule<ComponentActivity>()
+
+    private lateinit var viewModel: SignerViewModel
+
+    @Before
+    fun setUp() {
+        // Chaquopy initializes on first Python call (~5-10s on emulator).
+        // Use the test app's Application context to construct the ViewModel.
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        viewModel = SignerViewModel(app)
+    }
 
     @Test
     fun singleSigP2wpkh_parseThenSign() {
-        // Load cassette, decode PSBT from metadata
-        // Create ViewModel, set up AppRoot
-        // Call viewModel.loadPsbt(psbtBytes)
-        // Assert TransactionReview renders with real addresses/amounts
-        // Call viewModel.signWithBridge(playbackBridge)
-        // Wait for Result state
-        // Assert "Signature Added" displayed (single-sig partial)
-        // playbackBridge.assertConsumed()
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val playbackBridge = PlaybackBridge.fromAsset(context, "single-sig-p2wpkh.json")
+        val psbtBytes = Base64.decode(playbackBridge.inputPsbtB64, Base64.DEFAULT)
+
+        composeTestRule.setContent {
+            SatoshiSignerTheme { AppRoot(viewModel = viewModel) }
+        }
+
+        // Load PSBT → Chaquopy parse_psbt() → TransactionReview
+        viewModel.loadPsbt(psbtBytes)
+        composeTestRule.waitUntil(timeoutMillis = 15_000) {
+            viewModel.state.value is AppState.TransactionReview
+        }
+        composeTestRule.onNodeWithText("Transaction Details").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Sign with Trezor").assertIsDisplayed()
+
+        // Sign with cassette replay → Chaquopy sign_psbt() → Result
+        viewModel.signWithBridge(playbackBridge, psbtBytes, playbackBridge.network)
+        composeTestRule.waitUntil(timeoutMillis = 30_000) {
+            viewModel.state.value is AppState.Result
+        }
+        composeTestRule.onNodeWithText("Signature Added").assertIsDisplayed()
+        playbackBridge.assertConsumed()
     }
 
     @Test
     fun multisigTestnet3_parseThenSign() {
-        // Same pattern
-        // Assert "Transaction Signed" displayed (multisig complete)
-        // playbackBridge.assertConsumed()
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val playbackBridge = PlaybackBridge.fromAsset(context, "multisig-testnet3.json")
+        val psbtBytes = Base64.decode(playbackBridge.inputPsbtB64, Base64.DEFAULT)
+
+        composeTestRule.setContent {
+            SatoshiSignerTheme { AppRoot(viewModel = viewModel) }
+        }
+
+        viewModel.loadPsbt(psbtBytes)
+        composeTestRule.waitUntil(timeoutMillis = 15_000) {
+            viewModel.state.value is AppState.TransactionReview
+        }
+        composeTestRule.onNodeWithText("Transaction Details").assertIsDisplayed()
+
+        viewModel.signWithBridge(playbackBridge, psbtBytes, playbackBridge.network)
+        composeTestRule.waitUntil(timeoutMillis = 30_000) {
+            viewModel.state.value is AppState.Result
+        }
+        composeTestRule.onNodeWithText("Transaction Signed").assertIsDisplayed()
+        playbackBridge.assertConsumed()
     }
 }
 ```
 
+**Timeout handling:** Chaquopy first-import can take 5-10s on an emulator. `waitUntil` with generous timeouts (15s for parse, 30s for sign) prevents flaky failures. Tests are annotated `@LargeTest` per Android convention.
+
 These tests exercise: Chaquopy initialization, Python module imports (`remotesigner.psbt_parser`, `remotesigner.signer`), PythonBridge JSON round-trip, PlaybackBridge proxy via Chaquopy, and Compose state machine with real data.
 
-### 7. UI-only tests
+### 7. Extract `ErrorScreen` composable
+
+The error UI is currently rendered inline in `AppNavigation.kt` (lines 66-88). Extract it into a standalone `ErrorScreen` composable to match the pattern of other screens and make it independently testable:
+
+```kotlin
+// app/src/main/kotlin/com/remotesigner/ui/ErrorScreen.kt
+@Composable
+fun ErrorScreen(
+    message: String,
+    onHome: () -> Unit,
+    onCopyError: (String) -> Unit,
+)
+```
+
+`AppNavigation.kt` then delegates: `is AppState.Error -> ErrorScreen(...)`.
+
+### 8. Fix existing test call sites
+
+The existing `ScreenRenderTest.kt` and `NavigationTest.kt` call `SigningScreen(message = message)` with missing required parameters (`log`, `passphraseRequest`, `onCancel`). Also, `TestFixtures.reviewState` is missing the required `inputs` field.
+
+Fix by adding default parameter values to these signatures would be one approach, but the cleaner fix is to update the test call sites to pass all required parameters. This will be done as part of the implementation.
+
+### 9. UI-only tests
 
 Extend existing `ScreenRenderTest.kt` with new tests using the existing pattern (`createComposeRule()` + `setContent` + fixture data):
 
-**Error screen:**
+**Error screen (using new `ErrorScreen` composable):**
 - `errorScreen_displaysMessageAndButtons()` — Error message text, "Back to Home" button, "Copy Error" button
 - `errorScreen_withSigningLog()` — Long error message with embedded signing log
 
@@ -217,8 +298,8 @@ Extend existing `ScreenRenderTest.kt` with new tests using the existing pattern 
 **New fixtures in `TestFixtures.kt`:**
 ```kotlin
 val noOpCallback = SigningCallbackImpl(
-    onStatusUpdate = {},
-    onPassphraseRequest = {},
+    onStatusUpdate = { _ -> },
+    onPassphraseRequest = { _ -> },
 )
 
 val passphraseRequestOnDevice = PassphraseRequest(
@@ -235,21 +316,37 @@ val signingStateWithLog = AppState.Signing(
     message = "Confirm on your Trezor...",
     log = "Opening USB connection...\nClaiming interface...\nPython: Parsing PSBT...\n",
 )
+
+// Fix existing reviewState — add missing inputs field:
+val reviewState = AppState.TransactionReview(
+    inputs = listOf(
+        TxInput(address = "tb1q...sender", amount = 6_236_567L),
+    ),
+    outputs = sampleOutputs,
+    fee = 2_100L,
+    totalSent = 5_000_000L,
+    status = "needs_sig",
+    signers = sampleSigners,
+    warnings = emptyList(),
+)
 ```
 
 ## File changes summary
 
-**Production code (3 files modified, 1 new):**
+**Production code (4 files modified, 2 new):**
 - `app/src/main/kotlin/com/remotesigner/usb/SigningBridge.kt` — **new** interface
+- `app/src/main/kotlin/com/remotesigner/ui/ErrorScreen.kt` — **new** composable (extracted from AppNavigation.kt)
 - `app/src/main/kotlin/com/remotesigner/usb/UsbBridge.kt` — implement `SigningBridge`
 - `app/src/main/kotlin/com/remotesigner/bridge/PythonBridge.kt` — `bridge: UsbBridge` → `bridge: SigningBridge`
 - `app/src/main/kotlin/com/remotesigner/viewmodel/SignerViewModel.kt` — extract `signWithBridge()`
+- `app/src/main/kotlin/com/remotesigner/ui/AppNavigation.kt` — delegate error state to `ErrorScreen`
 
-**Test code (4 files modified/new):**
+**Test code (5 files modified/new):**
 - `app/src/androidTest/kotlin/com/remotesigner/PlaybackBridge.kt` — **new** Kotlin cassette replay
 - `app/src/androidTest/kotlin/com/remotesigner/ChaquopyE2ETest.kt` — **new** Chaquopy E2E tests
-- `app/src/androidTest/kotlin/com/remotesigner/ScreenRenderTest.kt` — add error + passphrase + log tests
-- `app/src/androidTest/kotlin/com/remotesigner/TestFixtures.kt` — add passphrase/log fixtures
+- `app/src/androidTest/kotlin/com/remotesigner/ScreenRenderTest.kt` — add error + passphrase + log tests, fix existing call sites
+- `app/src/androidTest/kotlin/com/remotesigner/NavigationTest.kt` — fix `SigningScreen` call site
+- `app/src/androidTest/kotlin/com/remotesigner/TestFixtures.kt` — add passphrase/log fixtures, add `inputs` to `reviewState`
 - `app/src/androidTest/assets/cassettes/` — **new** copied cassette JSON files
 
 ## What this does NOT test
