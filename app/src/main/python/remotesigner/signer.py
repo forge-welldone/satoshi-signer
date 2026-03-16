@@ -237,6 +237,53 @@ def _parse_multisig_script(
 
 
 # ---------------------------------------------------------------------------
+# PSBT completeness check
+# ---------------------------------------------------------------------------
+
+def _is_psbt_fully_signed(psbt: PSBT) -> bool:
+    """Return True only when every input has enough signatures.
+
+    For multisig inputs the required threshold *m* is read from the
+    witness-script (or redeem-script for bare P2SH).  For single-sig and
+    taproot inputs a single signature is sufficient.
+    """
+    for inp_scope in psbt.inputs:
+        # Taproot key-path: stored as PSBT_IN_TAP_KEY_SIG (key 0x13)
+        if inp_scope.unknown.get(b"\x13"):
+            continue
+
+        # Look for a multisig script (witness_script has priority)
+        ms_script: Optional[bytes] = None
+        if inp_scope.witness_script:
+            ms_script = inp_scope.witness_script.data
+        elif inp_scope.redeem_script:
+            rs_data = inp_scope.redeem_script.data
+            # Only use the redeem_script if it is NOT a witness program
+            # (P2SH-P2WSH has a short witness-program redeem_script)
+            is_wit, _, _ = is_witness(rs_data)
+            if not is_wit:
+                ms_script = rs_data
+
+        if (
+            ms_script
+            and len(ms_script) >= 37
+            and ms_script[-1] == 0xAE  # OP_CHECKMULTISIG
+        ):
+            m_byte = ms_script[0]
+            if 0x51 <= m_byte <= 0x60:
+                m = m_byte - 0x50
+                if len(inp_scope.partial_sigs) < m:
+                    return False
+                continue
+
+        # Single-sig ECDSA: need at least one partial_sig
+        if len(inp_scope.partial_sigs) < 1:
+            return False
+
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Master fingerprint helper
 # ---------------------------------------------------------------------------
 
@@ -643,8 +690,8 @@ def sign_psbt(
             # Serialize the updated PSBT
             signed_psbt_b64 = psbt.to_base64()
 
-            # If we have a serialized tx, the PSBT is fully signed
-            if serialized_tx:
+            # Check whether every input has enough signatures
+            if _is_psbt_fully_signed(psbt) and serialized_tx:
                 result = {
                     "status": "complete",
                     "raw_tx": serialized_tx.hex(),

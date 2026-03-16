@@ -133,8 +133,8 @@ class TestMultisigTestnet3:
             assert len(inp.partial_sigs) > 0 or inp.unknown.get(b"\x13")
         bridge.assert_consumed()
 
-    def test_produces_complete_transaction(self, bridge, cassette):
-        """Multisig signing with all keys produces a complete raw transaction."""
+    def test_partial_when_insufficient_signatures(self, bridge, cassette):
+        """2-of-3 multisig with one signer returns partial (not broadcastable)."""
         psbt_b64 = cassette["metadata"].get("input_psbt_b64")
         if not psbt_b64:
             pytest.skip("Cassette missing input_psbt_b64 in metadata")
@@ -143,6 +143,6 @@ class TestMultisigTestnet3:
         network = cassette["metadata"].get("network", "main")
         result = sign_psbt(psbt_bytes, bridge, network=network)
 
-        assert result["status"] == "complete"
-        assert "raw_tx" in result
+        assert result["status"] == "partial"
+        assert "raw_tx" not in result
         bridge.assert_consumed()
