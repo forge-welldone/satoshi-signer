@@ -66,6 +66,7 @@ fun AppRoot(
             onPsbtSelected = { uri -> viewModel.loadPsbt(uri) },
             onSignInboxItem = { item -> viewModel.signInboxItem(item) },
             onDeleteInboxItem = { item -> viewModel.deleteInboxItem(item.id) },
+            onItemTap = { item -> viewModel.openInboxResult(item) },
         )
         is AppState.TransactionReview -> TransactionReviewScreen(
             state = s,

@@ -39,6 +39,7 @@ fun HomeScreen(
     onPsbtSelected: (Uri) -> Unit,
     onSignInboxItem: (InboxItem) -> Unit,
     onDeleteInboxItem: (InboxItem) -> Unit,
+    onItemTap: (InboxItem) -> Unit = {},
 ) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
@@ -131,6 +132,7 @@ fun HomeScreen(
                 items = inboxItems,
                 onSign = onSignInboxItem,
                 onDelete = onDeleteInboxItem,
+                onItemTap = onItemTap,
             )
 
             Spacer(modifier = Modifier.height(32.dp))

@@ -10,20 +10,27 @@ import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nostr.InboxItem
 import com.remotesigner.nostr.InboxStatus
+import com.remotesigner.nostr.InboxStore
 import com.remotesigner.nostr.NostrKeyManager
 import com.remotesigner.nostr.NostrReceiver
 import com.remotesigner.nostr.formatBtcAmount
+import com.remotesigner.nostr.removeExpiredItems
 import com.remotesigner.usb.SigningBridge
 import com.remotesigner.usb.TrezorUsbManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 data class TxInput(
     val address: String,
@@ -126,6 +133,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     private val _inboxItems = MutableStateFlow<List<InboxItem>>(emptyList())
     val inboxItems: StateFlow<List<InboxItem>> = _inboxItems.asStateFlow()
     private var currentSigningInboxId: String? = null
+    private val inboxStore = InboxStore(File(application.filesDir, "inbox.json"))
 
     private val nostrReceiver = NostrReceiver(
         keyManager = keyManager,
@@ -136,9 +144,31 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     val relayConnectedCount: StateFlow<Int> = nostrReceiver.connectedCount
     val relayStatuses: StateFlow<Map<String, com.remotesigner.nostr.RelayStatus>> = nostrReceiver.relayStatuses
 
+    init {
+        // Load persisted inbox, clean expired, seed seen IDs
+        val persisted = removeExpiredItems(inboxStore.load())
+        if (persisted.isNotEmpty()) {
+            _inboxItems.value = persisted.sortedByDescending { it.receivedAt }
+            nostrReceiver.seedSeenIds(persisted.map { it.id }.toSet())
+        }
+        // Auto-save on changes (debounced)
+        @OptIn(FlowPreview::class)
+        _inboxItems
+            .debounce(500)
+            .onEach { items -> inboxStore.save(items) }
+            .launchIn(viewModelScope)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        inboxStore.save(_inboxItems.value)
+    }
+
     private fun handleInboxEvent(item: InboxItem) {
+        // Skip if already persisted (e.g., SIGNED/BROADCAST item re-delivered by relay)
+        if (_inboxItems.value.any { it.id == item.id }) return
+
         viewModelScope.launch {
-            // Parse PSBT to extract display amount
             val enrichedItem = try {
                 val result = withContext(Dispatchers.IO) {
                     pythonBridge.parsePsbt(item.psbtBytes)
@@ -148,17 +178,20 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 val totalSent = outputs
                     .filter { it["is_change"] as? Boolean != true }
                     .sumOf { (it["amount"] as? Number)?.toLong() ?: 0L }
-                item.copy(amount = formatBtcAmount(totalSent))
+                val network = result["network"]?.toString() ?: "main"
+                item.copy(amount = formatBtcAmount(totalSent), network = network)
             } catch (_: Exception) {
-                item // Keep without amount if parsing fails
+                item
             }
-            _inboxItems.update { current -> current + enrichedItem }
+            _inboxItems.update { current ->
+                (current + enrichedItem).sortedByDescending { it.receivedAt }
+            }
         }
     }
 
     fun signInboxItem(item: InboxItem) {
         currentSigningInboxId = item.id
-        updateInboxItemStatus(item.id, InboxStatus.SIGNING)
+        updateInboxItem(item.id) { it.copy(status = InboxStatus.SIGNING) }
         loadPsbt(item.psbtBytes)
     }
 
@@ -166,10 +199,23 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         _inboxItems.update { current -> current.filter { it.id != id } }
     }
 
-    private fun updateInboxItemStatus(id: String, status: InboxStatus) {
+    private fun updateInboxItem(id: String, transform: (InboxItem) -> InboxItem) {
         _inboxItems.update { current ->
-            current.map { if (it.id == id) it.copy(status = status) else it }
+            current.map { if (it.id == id) transform(it) else it }
         }
+    }
+
+    fun openInboxResult(item: InboxItem) {
+        if (item.status != InboxStatus.SIGNED && item.status != InboxStatus.BROADCAST) return
+        currentSigningInboxId = item.id
+        currentPsbtBytes = item.psbtBytes
+        _state.value = AppState.Result(
+            isComplete = true,
+            rawHex = item.rawHex,
+            txid = item.txid,
+            broadcastStatus = if (item.txid != null) "Broadcast successful" else null,
+            network = item.network,
+        )
     }
 
     fun startNostrReceiver() = nostrReceiver.connect()
@@ -379,6 +425,16 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
             when (result["status"]) {
                 "complete" -> {
+                    val inboxId = currentSigningInboxId
+                    if (inboxId != null) {
+                        updateInboxItem(inboxId) {
+                            it.copy(
+                                status = InboxStatus.SIGNED,
+                                rawHex = result["raw_tx"]?.toString(),
+                                network = network,
+                            )
+                        }
+                    }
                     _state.value = AppState.Result(
                         isComplete = true,
                         rawHex = result["raw_tx"]?.toString(),
@@ -396,6 +452,10 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 "cancelled" -> {
+                    val inboxId = currentSigningInboxId
+                    if (inboxId != null) {
+                        updateInboxItem(inboxId) { it.copy(status = InboxStatus.PENDING) }
+                    }
                     if (currentPsbtBytes != null) {
                         parsePsbt(currentPsbtBytes!!)
                     } else {
@@ -403,12 +463,20 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
                 else -> {
+                    val inboxId = currentSigningInboxId
+                    if (inboxId != null) {
+                        updateInboxItem(inboxId) { it.copy(status = InboxStatus.FAILED) }
+                    }
                     _state.value = AppState.Error(
                         result["message"]?.toString() ?: "Signing failed"
                     )
                 }
             }
         } catch (e: Exception) {
+            val inboxId = currentSigningInboxId
+            if (inboxId != null) {
+                updateInboxItem(inboxId) { it.copy(status = InboxStatus.FAILED) }
+            }
             val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
             _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
         } finally {
@@ -434,10 +502,17 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             if (result["status"] == "ok") {
+                val txid = result["txid"]?.toString()
                 _state.value = state.copy(
-                    txid = result["txid"]?.toString(),
+                    txid = txid,
                     broadcastStatus = "Broadcast successful",
                 )
+                val inboxId = currentSigningInboxId
+                if (inboxId != null && txid != null) {
+                    updateInboxItem(inboxId) {
+                        it.copy(status = InboxStatus.BROADCAST, txid = txid)
+                    }
+                }
             } else {
                 _state.value = state.copy(
                     broadcastStatus = "Broadcast failed: ${result["message"]}",
@@ -447,6 +522,10 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun cancelSigning() {
+        val inboxId = currentSigningInboxId
+        if (inboxId != null) {
+            updateInboxItem(inboxId) { it.copy(status = InboxStatus.PENDING) }
+        }
         currentSigningCallback?.cancel()
         currentSigningCallback = null
         _passphraseRequest.value = null
@@ -465,13 +544,16 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun goHome() {
-        // Update inbox item status based on signing result
+        // Update inbox item status based on signing result (safety net — main updates happen earlier)
         val inboxId = currentSigningInboxId
         if (inboxId != null) {
             val currentState = _state.value
             when (currentState) {
-                is AppState.Result -> updateInboxItemStatus(inboxId, InboxStatus.SIGNED)
-                is AppState.Error -> updateInboxItemStatus(inboxId, InboxStatus.FAILED)
+                is AppState.Result -> updateInboxItem(inboxId) {
+                    // Don't overwrite BROADCAST back to SIGNED
+                    if (it.status != InboxStatus.BROADCAST) it.copy(status = InboxStatus.SIGNED) else it
+                }
+                is AppState.Error -> updateInboxItem(inboxId) { it.copy(status = InboxStatus.FAILED) }
                 else -> {}
             }
             currentSigningInboxId = null
