@@ -71,6 +71,7 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20231013")
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.test.runner)
     debugImplementation(libs.compose.ui.test.manifest)
