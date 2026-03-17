@@ -13,9 +13,10 @@ Additionally, the app has no persistent structured storage. The planned inbox pe
 Introduce Room as the app's persistent storage layer. A single `AppDatabase` hosts all tables. This spec adds contact tables only. The inbox persistence spec (follow-up) will add the inbox table to the same database.
 
 **Dependencies** (added to `gradle/libs.versions.toml` and `app/build.gradle.kts`):
-- `androidx.room:room-runtime`
-- `androidx.room:room-ktx` (coroutine/Flow support)
-- `androidx.room:room-compiler` (KSP annotation processor)
+- `androidx.room:room-runtime:2.6.1`
+- `androidx.room:room-ktx:2.6.1` (coroutine/Flow support)
+- `androidx.room:room-compiler:2.6.1` (KSP annotation processor)
+- KSP Gradle plugin (version matching the project's Kotlin version)
 
 ### 2. Data Model
 
@@ -96,7 +97,7 @@ private val db = AppDatabase.getInstance(application)
 private val contactDao = db.contactDao()
 ```
 
-### 5. ContactDao
+### 4. ContactDao
 
 ```kotlin
 @Dao
@@ -114,7 +115,7 @@ interface ContactDao {
 
     @Transaction
     @Query("""
-        SELECT c.*, cf.fingerprint FROM contacts c
+        SELECT c.* FROM contacts c
         INNER JOIN contact_fingerprints cf ON c.id = cf.contactId
         WHERE cf.fingerprint IN (:fingerprints)
     """)
@@ -141,7 +142,7 @@ interface ContactDao {
 - `findByFingerprint()` resolves a single fingerprint → label (used by quick-add duplicate check)
 - `findByFingerprints()` is the hot path — batch resolves all signer fingerprints in one query for TransactionReview
 
-### 6. TransactionReview Integration (Quick-Add)
+### 5. TransactionReview Integration (Quick-Add)
 
 Extend `SignerInfo` with contact resolution fields:
 
@@ -161,7 +162,8 @@ data class SignerInfo(
 // In parsePsbt(), after building rawSigners from Python result:
 val fingerprints = rawSigners.map { it.fingerprint }
 val contactMap = contactDao.findByFingerprints(fingerprints)
-    .associateBy { it.fingerprints.first().fingerprint }
+    .flatMap { cwf -> cwf.fingerprints.map { fp -> fp.fingerprint to cwf } }
+    .toMap()
 
 val signers = rawSigners.map { signer ->
     val contact = contactMap[signer.fingerprint]
@@ -188,8 +190,9 @@ val signers = rawSigners.map { signer ->
   - "Create new contact" option
   - Save / Cancel
 - Tapping a labeled signer opens the same edit dialog (pre-populated with the contact's data). Navigating away from TransactionReview mid-review would lose the current PSBT, so all contact editing from this screen uses modal dialogs.
+- The quick-add dialog calls ViewModel contact CRUD methods via callbacks passed to `TransactionReviewScreen` (e.g., `onSaveContact: (label: String, fingerprint: String, existingContactId: Long?) -> Unit`). After saving, the signer list is re-enriched so the label appears immediately.
 
-### 7. Contacts Screen
+### 6. Contacts Screen
 
 New `AppState.Contacts` state, accessible via a contacts icon button on the Home screen:
 
@@ -201,7 +204,7 @@ The Contacts screen manages its own UI state (selected contact, dialog visibilit
 
 **Navigation:**
 - Home screen gets a contacts/people icon button → `AppState.Contacts`
-- Back button on Contacts → `AppState.Home`
+- On-screen "←" back arrow on Contacts → `AppState.Home` (consistent with app's existing navigation pattern of on-screen buttons; also wire `BackHandler` composable for Android system back button)
 
 **Screen layout:**
 
@@ -236,13 +239,13 @@ The Contacts screen manages its own UI state (selected contact, dialog visibilit
 - Optional npub field
 - Save / Cancel
 
-### 8. Result Screen — Future PSBT Forwarding (Not Implemented)
+### 7. Result Screen — Future PSBT Forwarding (Not Implemented)
 
 When signing produces a partial result (multisig, not enough signatures), contacts with npubs could be offered as forwarding targets ("Send to Alice"). This requires Nostr sending logic (kind 4 event, NIP-04 encryption — reverse of the receive flow).
 
 **Not implemented in this spec.** The contact model supports it (npub field exists), but the sending logic is a follow-up. The Result screen is unchanged.
 
-### 9. Input Validation
+### 8. Input Validation
 
 **Fingerprints:**
 - Must be exactly 8 hexadecimal characters (case-insensitive)
@@ -256,7 +259,7 @@ When signing produces a partial result (multisig, not enough signatures), contac
 
 Future enhancement: accept key-origin format (`[fingerprint/path]zpub...`) and parse the master fingerprint from the brackets. Raw zpub parsing is not reliable for extracting master fingerprints (only contains parent fingerprint). Not in scope for this spec.
 
-### 10. Python Layer
+### 9. Python Layer
 
 No Python changes are needed. The Python PSBT parser already returns cosigner fingerprints as hex strings. All contact resolution happens in the Kotlin layer after `parsePsbt()` returns.
 
