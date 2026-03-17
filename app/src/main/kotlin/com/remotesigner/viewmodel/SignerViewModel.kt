@@ -6,6 +6,11 @@ import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
+import com.remotesigner.data.AppDatabase
+import com.remotesigner.data.Contact
+import com.remotesigner.data.ContactFingerprint
+import com.remotesigner.data.ContactWithFingerprints
+import com.remotesigner.data.FingerprintValidator
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nostr.InboxItem
@@ -48,6 +53,8 @@ data class SignerInfo(
     val fingerprint: String,
     val signed: Boolean,
     val isThisDevice: Boolean = false,
+    val contactLabel: String? = null,
+    val contactId: Long? = null,
 )
 
 sealed class AppState {
@@ -75,6 +82,7 @@ sealed class AppState {
         val network: String = "main",
     ) : AppState()
     data class Error(val message: String) : AppState()
+    data object Contacts : AppState()
 }
 
 data class PassphraseRequest(
@@ -92,6 +100,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val pythonBridge = PythonBridge()
+    private val contactDao = AppDatabase.getInstance(application).contactDao()
+    val contacts = contactDao.getAllWithFingerprints()
     val trezorUsb = TrezorUsbManager(application)
 
     private var currentPsbtBytes: ByteArray? = null
@@ -268,12 +278,24 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             val fee = (result["fee"] as? Number)?.toLong() ?: 0
             val totalSent = outputs.filter { !it.isChange }.sumOf { it.amount }
 
-            val signers = (result["signers"] as? List<Map<String, Any?>>)?.map { s ->
+            val rawSigners = (result["signers"] as? List<Map<String, Any?>>)?.map { s ->
                 SignerInfo(
                     fingerprint = s["fingerprint"]?.toString() ?: "",
                     signed = s["signed"] as? Boolean ?: false,
                 )
             } ?: emptyList()
+
+            val signerFingerprints = rawSigners.map { it.fingerprint }
+            val contactMap = contactDao.findByFingerprints(signerFingerprints)
+                .flatMap { cwf -> cwf.fingerprints.map { fp -> fp.fingerprint to cwf } }
+                .toMap()
+            val signers = rawSigners.map { signer ->
+                val contact = contactMap[signer.fingerprint]
+                signer.copy(
+                    contactLabel = contact?.contact?.label,
+                    contactId = contact?.contact?.id,
+                )
+            }
 
             val warnings = mutableListOf<String>()
             if (fee > 1_000_000) {
@@ -540,6 +562,81 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch { parsePsbt(currentPsbtBytes!!) }
         } else {
             _state.value = AppState.Home
+        }
+    }
+
+    fun showContacts() {
+        _state.value = AppState.Contacts
+    }
+
+    fun saveContact(label: String, fingerprint: String, existingContactId: Long?) {
+        val normalized = FingerprintValidator.normalize(fingerprint) ?: return
+        val trimmedLabel = label.trim()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            if (existingContactId != null) {
+                contactDao.insertFingerprint(
+                    ContactFingerprint(contactId = existingContactId, fingerprint = normalized)
+                )
+            } else {
+                if (trimmedLabel.isEmpty() || trimmedLabel.length > 50) return@launch
+                val contactId = contactDao.insertContact(Contact(label = trimmedLabel))
+                contactDao.insertFingerprint(
+                    ContactFingerprint(contactId = contactId, fingerprint = normalized)
+                )
+            }
+            reEnrichSigners()
+        }
+    }
+
+    fun updateContact(contactId: Long, newLabel: String, npub: String?) {
+        val trimmedLabel = newLabel.trim()
+        if (trimmedLabel.isEmpty() || trimmedLabel.length > 50) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.updateContact(Contact(id = contactId, label = trimmedLabel, npub = npub?.trim()?.ifEmpty { null }))
+        }
+    }
+
+    fun addFingerprintToContact(contactId: Long, fingerprint: String) {
+        val normalized = FingerprintValidator.normalize(fingerprint) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.insertFingerprint(
+                ContactFingerprint(contactId = contactId, fingerprint = normalized)
+            )
+            reEnrichSigners()
+        }
+    }
+
+    fun deleteContact(contactId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.deleteContact(contactId)
+            reEnrichSigners()
+        }
+    }
+
+    fun deleteFingerprint(fingerprintId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.deleteFingerprint(fingerprintId)
+            reEnrichSigners()
+        }
+    }
+
+    private suspend fun reEnrichSigners() {
+        val currentState = _state.value
+        if (currentState is AppState.TransactionReview) {
+            val fingerprints = currentState.signers.map { it.fingerprint }
+            val contactMap = contactDao.findByFingerprints(fingerprints)
+                .flatMap { cwf -> cwf.fingerprints.map { fp -> fp.fingerprint to cwf } }
+                .toMap()
+            val enriched = currentState.signers.map { signer ->
+                val contact = contactMap[signer.fingerprint]
+                signer.copy(
+                    contactLabel = contact?.contact?.label,
+                    contactId = contact?.contact?.id,
+                )
+            }
+            _state.value = currentState.copy(signers = enriched)
         }
     }
 

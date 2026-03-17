@@ -111,5 +111,8 @@ fun AppRoot(
             message = s.message,
             onHome = { viewModel.goHome() },
         )
+        is AppState.Contacts -> {
+            // Contacts screen placeholder — UI implementation in a future task
+        }
     }
 }
