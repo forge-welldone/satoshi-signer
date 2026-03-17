@@ -54,3 +54,20 @@ class InboxStore(private val file: File) {
         }
     }
 }
+
+private const val EXPIRY_SHORT_SECONDS = 86400L      // 24 hours
+private const val EXPIRY_LONG_SECONDS = 86400L * 7    // 7 days
+
+fun removeExpiredItems(
+    items: List<InboxItem>,
+    nowSeconds: Long = System.currentTimeMillis() / 1000,
+): List<InboxItem> {
+    return items.filter { item ->
+        val age = nowSeconds - item.receivedAt
+        val maxAge = when (item.status) {
+            InboxStatus.PENDING, InboxStatus.SIGNING, InboxStatus.FAILED -> EXPIRY_SHORT_SECONDS
+            InboxStatus.SIGNED, InboxStatus.BROADCAST -> EXPIRY_LONG_SECONDS
+        }
+        age <= maxAge
+    }
+}
