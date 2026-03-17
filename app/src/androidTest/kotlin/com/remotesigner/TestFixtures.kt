@@ -93,7 +93,7 @@ object TestFixtures {
     )
 
     val sampleInboxItems = listOf(
-        com.remotesigner.nostr.InboxItem(
+        com.remotesigner.nostr.InboxItemEntity(
             id = "event1",
             psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
             label = "Payment to Alice",
@@ -102,7 +102,7 @@ object TestFixtures {
             receivedAt = System.currentTimeMillis() / 1000 - 120, // 2 min ago
             status = com.remotesigner.nostr.InboxStatus.PENDING,
         ),
-        com.remotesigner.nostr.InboxItem(
+        com.remotesigner.nostr.InboxItemEntity(
             id = "event2",
             psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
             label = "Unsigned transaction",
@@ -113,7 +113,7 @@ object TestFixtures {
         ),
     )
 
-    val signedInboxItem = com.remotesigner.nostr.InboxItem(
+    val signedInboxItem = com.remotesigner.nostr.InboxItemEntity(
         id = "event3",
         psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
         label = "Payment to Bob",
@@ -125,7 +125,7 @@ object TestFixtures {
         network = "test",
     )
 
-    val broadcastInboxItem = com.remotesigner.nostr.InboxItem(
+    val broadcastInboxItem = com.remotesigner.nostr.InboxItemEntity(
         id = "event4",
         psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
         label = "Payment to Carol",

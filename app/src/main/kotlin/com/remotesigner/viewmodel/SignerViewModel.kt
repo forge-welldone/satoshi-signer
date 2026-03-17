@@ -13,7 +13,7 @@ import com.remotesigner.data.ContactWithFingerprints
 import com.remotesigner.data.FingerprintValidator
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.nfc.NfcReadResult
-import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.InboxStatus
 import com.remotesigner.nostr.InboxStore
 import com.remotesigner.nostr.NostrKeyManager
@@ -140,8 +140,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     // --- Nostr inbox ---
     val keyManager = NostrKeyManager(application)
-    private val _inboxItems = MutableStateFlow<List<InboxItem>>(emptyList())
-    val inboxItems: StateFlow<List<InboxItem>> = _inboxItems.asStateFlow()
+    private val _inboxItems = MutableStateFlow<List<InboxItemEntity>>(emptyList())
+    val inboxItems: StateFlow<List<InboxItemEntity>> = _inboxItems.asStateFlow()
     private var currentSigningInboxId: String? = null
     private val inboxStore = InboxStore(File(application.filesDir, "inbox.json"))
 
@@ -174,7 +174,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         inboxStore.save(_inboxItems.value)
     }
 
-    private fun handleInboxEvent(item: InboxItem) {
+    private fun handleInboxEvent(item: InboxItemEntity) {
         // Skip if already persisted (e.g., SIGNED/BROADCAST item re-delivered by relay)
         if (_inboxItems.value.any { it.id == item.id }) return
 
@@ -199,7 +199,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signInboxItem(item: InboxItem) {
+    fun signInboxItem(item: InboxItemEntity) {
         currentSigningInboxId = item.id
         updateInboxItem(item.id) { it.copy(status = InboxStatus.SIGNING) }
         loadPsbt(item.psbtBytes)
@@ -209,13 +209,13 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         _inboxItems.update { current -> current.filter { it.id != id } }
     }
 
-    private fun updateInboxItem(id: String, transform: (InboxItem) -> InboxItem) {
+    private fun updateInboxItem(id: String, transform: (InboxItemEntity) -> InboxItemEntity) {
         _inboxItems.update { current ->
             current.map { if (it.id == id) transform(it) else it }
         }
     }
 
-    fun openInboxResult(item: InboxItem) {
+    fun openInboxResult(item: InboxItemEntity) {
         if (item.status != InboxStatus.SIGNED && item.status != InboxStatus.BROADCAST) return
         currentSigningInboxId = item.id
         currentPsbtBytes = item.psbtBytes
