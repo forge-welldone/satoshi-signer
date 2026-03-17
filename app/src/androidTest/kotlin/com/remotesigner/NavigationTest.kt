@@ -57,6 +57,7 @@ class NavigationTest {
                         onHome = {},
                     )
                     is AppState.Error -> Unit
+                    is AppState.Contacts -> Unit
                 }
             }
         }
