@@ -45,6 +45,11 @@ class NostrReceiver(
 
     private val webSockets = ConcurrentHashMap<String, WebSocket>()
     private val seenIds = mutableSetOf<String>()
+
+    fun seedSeenIds(ids: Set<String>) {
+        synchronized(seenIds) { seenIds.addAll(ids) }
+    }
+
     private val backoffMs = ConcurrentHashMap<String, Long>()
     private val _relayStatuses = MutableStateFlow<Map<String, RelayStatus>>(emptyMap())
     @Volatile private var active = false
