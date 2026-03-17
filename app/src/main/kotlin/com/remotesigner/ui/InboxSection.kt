@@ -70,6 +70,7 @@ fun InboxItemCard(
                         InboxStatus.PENDING -> MaterialTheme.colorScheme.primary
                         InboxStatus.SIGNING -> MaterialTheme.colorScheme.tertiary
                         InboxStatus.SIGNED -> MaterialTheme.colorScheme.secondary
+                        InboxStatus.BROADCAST -> MaterialTheme.colorScheme.secondary
                         InboxStatus.FAILED -> MaterialTheme.colorScheme.error
                     },
                 )

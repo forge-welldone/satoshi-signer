@@ -1,6 +1,6 @@
 package com.remotesigner.nostr
 
-enum class InboxStatus { PENDING, SIGNING, SIGNED, FAILED }
+enum class InboxStatus { PENDING, SIGNING, SIGNED, BROADCAST, FAILED }
 
 enum class RelayStatus { CONNECTING, CONNECTED, DISCONNECTED, ERROR }
 
@@ -12,6 +12,9 @@ data class InboxItem(
     val senderNpub: String,
     val receivedAt: Long,
     val status: InboxStatus = InboxStatus.PENDING,
+    val rawHex: String? = null,
+    val txid: String? = null,
+    val network: String = "main",
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
