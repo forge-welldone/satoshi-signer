@@ -94,6 +94,73 @@ class InboxScreenTest {
     }
 
     @Test
+    fun inboxItemCard_broadcastStatus_showsChipAndTxid() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(
+                    items = listOf(TestFixtures.broadcastInboxItem),
+                    onSign = {},
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("broadcast").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Sign").assertDoesNotExist()
+        composeTestRule.onNodeWithText("txid: a1b2c3d4...e9f0a1b2").assertIsDisplayed()
+    }
+
+    @Test
+    fun inboxItemCard_signedStatus_showsChip() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(
+                    items = listOf(TestFixtures.signedInboxItem),
+                    onSign = {},
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("signed").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Sign").assertDoesNotExist()
+    }
+
+    @Test
+    fun inboxItemCard_pendingStatus_showsChip() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(
+                    items = listOf(TestFixtures.sampleInboxItems[0]),
+                    onSign = {},
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("pending").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Sign").assertIsDisplayed()
+    }
+
+    @Test
+    fun inboxItemCard_signedStatus_cardTappable() {
+        var tappedItem: InboxItem? = null
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(
+                    items = listOf(TestFixtures.signedInboxItem),
+                    onSign = {},
+                    onDelete = {},
+                    onItemTap = { tappedItem = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Payment to Bob").performClick()
+        assert(tappedItem != null) { "onItemTap should have been called for signed item" }
+    }
+
+    @Test
     fun homeScreen_relayStatus_showsConnectedCount() {
         val relays = mapOf(
             "wss://nos.lol" to RelayStatus.CONNECTED,

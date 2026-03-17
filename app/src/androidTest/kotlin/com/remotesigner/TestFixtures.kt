@@ -112,4 +112,29 @@ object TestFixtures {
             status = com.remotesigner.nostr.InboxStatus.FAILED,
         ),
     )
+
+    val signedInboxItem = com.remotesigner.nostr.InboxItem(
+        id = "event3",
+        psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
+        label = "Payment to Bob",
+        amount = "0.01000000 BTC",
+        senderNpub = "npub1c5z9...n7h4",
+        receivedAt = System.currentTimeMillis() / 1000 - 300,
+        status = com.remotesigner.nostr.InboxStatus.SIGNED,
+        rawHex = "0200000001deadbeef",
+        network = "test",
+    )
+
+    val broadcastInboxItem = com.remotesigner.nostr.InboxItem(
+        id = "event4",
+        psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
+        label = "Payment to Carol",
+        amount = "0.00250000 BTC",
+        senderNpub = "npub1d6a0...p8j5",
+        receivedAt = System.currentTimeMillis() / 1000 - 600,
+        status = com.remotesigner.nostr.InboxStatus.BROADCAST,
+        rawHex = "0200000001cafebabe",
+        txid = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+        network = "main",
+    )
 }
