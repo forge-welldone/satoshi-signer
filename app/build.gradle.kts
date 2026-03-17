@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
     id("com.chaquo.python")
 }
 
@@ -67,6 +68,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.secp256k1.kmp)
     implementation(libs.zxing.core)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
     debugImplementation(libs.compose.ui.tooling)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
@@ -76,4 +80,6 @@ dependencies {
     androidTestImplementation(libs.test.runner)
     debugImplementation(libs.compose.ui.test.manifest)
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(libs.room.testing)
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
