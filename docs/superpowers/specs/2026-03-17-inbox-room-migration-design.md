@@ -42,8 +42,20 @@ interface InboxDao {
     @Query("SELECT * FROM inbox_items")
     suspend fun getAllOnce(): List<InboxItemEntity>
 
+    @Query("SELECT COUNT(*) FROM inbox_items WHERE id = :id")
+    suspend fun exists(id: String): Int
+
     @Upsert
     suspend fun upsert(item: InboxItemEntity)
+
+    @Query("UPDATE inbox_items SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: InboxStatus)
+
+    @Query("UPDATE inbox_items SET status = :status, rawHex = :rawHex, network = :network WHERE id = :id")
+    suspend fun updateSigned(id: String, status: InboxStatus, rawHex: String, network: String)
+
+    @Query("UPDATE inbox_items SET status = :status, txid = :txid WHERE id = :id")
+    suspend fun updateBroadcast(id: String, status: InboxStatus, txid: String)
 
     @Query("DELETE FROM inbox_items WHERE id = :id")
     suspend fun delete(id: String)
@@ -59,7 +71,9 @@ interface InboxDao {
 
 - `getAll()` returns a reactive Flow sorted by `receivedAt DESC` — Room re-emits on any table change.
 - `getAllOnce()` is a one-shot suspend function used at init time to seed `NostrReceiver.seenIds`.
-- `upsert()` uses Room's `@Upsert` annotation (insert or update by primary key).
+- `exists()` checks if an event ID is already in the DB — used for dedup in `handleInboxEvent` to avoid the race of reading from a potentially-stale Flow snapshot.
+- `upsert()` uses Room's `@Upsert` annotation (insert or update by primary key). Used only for initial insert of new items.
+- `updateStatus()`, `updateSigned()`, `updateBroadcast()` — targeted column updates that avoid full-row replacement races. Each updates only the columns relevant to that state transition.
 - `deleteExpired()` takes pre-computed cutoff timestamps so the DAO stays pure.
 
 ## Database Changes
@@ -106,7 +120,7 @@ val inboxItems: StateFlow<List<InboxItemEntity>> = inboxDao.getAll()
     .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 ```
 
-**Init block:**
+**Init block** — seed completes before Nostr connect to avoid dedup race:
 ```kotlin
 init {
     viewModelScope.launch {
@@ -119,19 +133,24 @@ init {
         if (persisted.isNotEmpty()) {
             nostrReceiver.seedSeenIds(persisted.map { it.id }.toSet())
         }
+        // Connect after seeding so relay re-deliveries are properly deduped
+        // (NostrReceiver.connect() is called from here, not from onStart)
     }
-    // ... existing nostrReceiver setup
 }
 ```
 
-**Write operations** — each calls DAO directly:
-- `handleInboxEvent`: `inboxDao.upsert(newEntity)` instead of `_inboxItems.update { ... }`
-- `updateInboxItem(id, transform)`: read from `inboxItems.value.find { it.id == id }`, apply transform, `inboxDao.upsert(result)`
+**Write operations** — each calls targeted DAO methods directly:
+- `handleInboxEvent`: check `inboxDao.exists(id)` first (DB query, not Flow snapshot), then `inboxDao.upsert(newEntity)` for new items only
 - `deleteInboxItem(id)`: `inboxDao.delete(id)`
-- Signing status updates: same `updateInboxItem` pattern with DAO upsert
-- Broadcast status update: same pattern
+- Status transitions use targeted updates (no full-row replacement):
+  - `signInboxItem`: `inboxDao.updateStatus(id, SIGNING)`
+  - Signing success: `inboxDao.updateSigned(id, SIGNED, rawHex, network)`
+  - Broadcast success: `inboxDao.updateBroadcast(id, BROADCAST, txid)`
+  - Cancel/error: `inboxDao.updateStatus(id, PENDING)` or `inboxDao.updateStatus(id, FAILED)`
+  - `goHome` BROADCAST guard: read from `inboxItems.value`, check status, only update if not BROADCAST
+- Remove `updateInboxItem(id, transform)` helper — replaced by targeted DAO calls
 
-All DAO calls happen inside `viewModelScope.launch(Dispatchers.IO) { ... }` or `viewModelScope.launch { ... }` (Room already dispatches to a background thread for suspend functions, but explicit IO dispatcher for clarity is optional).
+All DAO calls happen inside `viewModelScope.launch { ... }` (Room suspend functions already dispatch to a background thread).
 
 ## Files Deleted
 
@@ -150,6 +169,7 @@ All DAO calls happen inside `viewModelScope.launch(Dispatchers.IO) { ... }` or `
 | `SignerViewModel.kt` | Replace InboxStore with DAO, remove debounce/flush |
 | `HomeScreen.kt` | Update type from `InboxItem` to `InboxItemEntity` |
 | `InboxSection.kt` | Update type from `InboxItem` to `InboxItemEntity` |
+| `NostrReceiver.kt` | Update `InboxItem` → `InboxItemEntity` in callback type |
 | `AppNavigation.kt` | Update type if needed |
 | `TestFixtures.kt` | Update fixtures to use `InboxItemEntity` |
 | `InboxScreenTest.kt` | Update to use `InboxItemEntity` |
