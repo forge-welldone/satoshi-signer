@@ -118,8 +118,14 @@ fun AppRoot(
             message = s.message,
             onHome = { viewModel.goHome() },
         )
-        is AppState.Contacts -> {
-            // Contacts screen placeholder — UI implementation in a future task
-        }
+        is AppState.Contacts -> ContactsScreen(
+            contacts = contacts,
+            onBack = { viewModel.goHome() },
+            onAddContact = { label, fp -> viewModel.saveContact(label, fp, null) },
+            onUpdateContact = { id, label, npub -> viewModel.updateContact(id, label, npub) },
+            onAddFingerprint = { id, fp -> viewModel.addFingerprintToContact(id, fp) },
+            onDeleteContact = { id -> viewModel.deleteContact(id) },
+            onDeleteFingerprint = { id -> viewModel.deleteFingerprint(id) },
+        )
     }
 }
