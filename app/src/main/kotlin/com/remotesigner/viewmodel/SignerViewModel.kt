@@ -55,6 +55,7 @@ sealed class AppState {
         val warnings: List<String>,
         val requiredSigs: Int = 0,
         val totalSigs: Int = 0,
+        val network: String = "main",
     ) : AppState()
     data class Signing(val message: String, val log: String = "") : AppState()
     data class Result(
@@ -64,6 +65,7 @@ sealed class AppState {
         val updatedPsbt: ByteArray? = null,
         val broadcastStatus: String? = null,
         val errorMessage: String? = null,
+        val network: String = "main",
     ) : AppState()
     data class Error(val message: String) : AppState()
 }
@@ -242,6 +244,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 warnings = warnings,
                 requiredSigs = (result["required_sigs"] as? Number)?.toInt() ?: 0,
                 totalSigs = (result["total_sigs"] as? Number)?.toInt() ?: 0,
+                network = currentNetwork,
             )
         } catch (e: Exception) {
             _state.value = AppState.Error("Invalid PSBT: ${e.message}")
@@ -379,6 +382,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     _state.value = AppState.Result(
                         isComplete = true,
                         rawHex = result["raw_tx"]?.toString(),
+                        network = network,
                     )
                 }
                 "partial" -> {
@@ -388,6 +392,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                         updatedPsbt = psbtB64?.let {
                             android.util.Base64.decode(it, android.util.Base64.DEFAULT)
                         },
+                        network = network,
                     )
                 }
                 "cancelled" -> {

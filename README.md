@@ -39,6 +39,7 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 - **OP_RETURN display** — shows embedded text (e.g. memos) in the transaction preview
 - **Multisig status tracking** — shows which signers have signed (by fingerprint)
 - **Transaction broadcasting** to mempool.space / blockstream.info with retry and fallback
+- **Mempool links** — tap any address or txid to view it on mempool.space (auto-detects mainnet/testnet)
 - **Manual broadcast fallback** — copy raw hex if API broadcast fails
 - **PSBT export** for partially-signed multisig transactions (via Android share sheet)
 - **Intent filter** — open `.psbt` files directly from file managers and email apps

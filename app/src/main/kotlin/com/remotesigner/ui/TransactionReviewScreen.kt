@@ -1,11 +1,15 @@
 package com.remotesigner.ui
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerInfo
@@ -41,14 +45,14 @@ fun TransactionReviewScreen(
 
             Text("From:", style = MaterialTheme.typography.titleMedium)
             state.inputs.forEach { inp ->
-                InputRow(inp)
+                InputRow(inp, state.network)
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             Text("To:", style = MaterialTheme.typography.titleMedium)
             state.outputs.filter { !it.isChange && it.opReturn == null }.forEach { out ->
-                OutputRow(out, prefix = "\u2192")
+                OutputRow(out, prefix = "\u2192", network = state.network)
             }
 
             val opReturnOutputs = state.outputs.filter { it.opReturn != null }
@@ -70,7 +74,7 @@ fun TransactionReviewScreen(
             if (changeOutputs.isNotEmpty()) {
                 Text("Change (back to wallet):", style = MaterialTheme.typography.titleMedium)
                 changeOutputs.forEach { out ->
-                    OutputRow(out, prefix = "\u2190")
+                    OutputRow(out, prefix = "\u2190", network = state.network)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -119,14 +123,18 @@ fun TransactionReviewScreen(
 }
 
 @Composable
-private fun InputRow(input: TxInput) {
+private fun InputRow(input: TxInput, network: String) {
+    val context = LocalContext.current
+    val url = mempoolAddressUrl(input.address, network)
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             "\u2190 ${shortenAddress(input.address)}",
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).clickable {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            },
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(formatBtc(input.amount), style = MaterialTheme.typography.bodyMedium)
@@ -134,14 +142,18 @@ private fun InputRow(input: TxInput) {
 }
 
 @Composable
-private fun OutputRow(output: TxOutput, prefix: String) {
+private fun OutputRow(output: TxOutput, prefix: String, network: String) {
+    val context = LocalContext.current
+    val url = mempoolAddressUrl(output.address, network)
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             "$prefix ${shortenAddress(output.address)}",
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).clickable {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            },
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(formatBtc(output.amount), style = MaterialTheme.typography.bodyMedium)
