@@ -40,6 +40,7 @@ fun HomeScreen(
     onSignInboxItem: (InboxItem) -> Unit,
     onDeleteInboxItem: (InboxItem) -> Unit,
     onItemTap: (InboxItem) -> Unit = {},
+    onContacts: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
@@ -97,6 +98,13 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Open PSBT File")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onContacts,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Contacts")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
