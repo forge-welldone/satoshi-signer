@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.remotesigner.data.ContactWithFingerprints
+import com.remotesigner.data.FingerprintValidator
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerInfo
 import com.remotesigner.viewmodel.TxInput
@@ -19,9 +22,13 @@ import com.remotesigner.viewmodel.TxOutput
 @Composable
 fun TransactionReviewScreen(
     state: AppState.TransactionReview,
+    contacts: List<ContactWithFingerprints>,
     onSign: () -> Unit,
     onCancel: () -> Unit,
+    onSaveContact: (label: String, fingerprint: String, existingContactId: Long?) -> Unit,
 ) {
+    var showAddDialog by remember { mutableStateOf<SignerInfo?>(null) }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -105,7 +112,7 @@ fun TransactionReviewScreen(
             if (state.signers.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 state.signers.forEach { signer ->
-                    SignerRow(signer)
+                    SignerRow(signer) { showAddDialog = signer }
                 }
             }
 
@@ -118,6 +125,15 @@ fun TransactionReviewScreen(
             OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
                 Text("Cancel")
             }
+        }
+
+        showAddDialog?.let { signer ->
+            QuickAddContactDialog(
+                signer = signer,
+                existingContacts = contacts,
+                onDismiss = { showAddDialog = null },
+                onSave = onSaveContact,
+            )
         }
     }
 }
@@ -161,13 +177,31 @@ private fun OutputRow(output: TxOutput, prefix: String, network: String) {
 }
 
 @Composable
-private fun SignerRow(signer: SignerInfo) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+private fun SignerRow(signer: SignerInfo, onTap: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable(onClick = onTap),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             if (signer.signed) "\u2713" else "\u2717",
             modifier = Modifier.width(24.dp),
         )
-        Text(signer.fingerprint)
+        if (signer.contactLabel != null) {
+            Text(signer.contactLabel)
+            Text(
+                " (${signer.fingerprint})",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Text(signer.fingerprint)
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                "+ Add label",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         if (signer.isThisDevice) {
             Text(" \u2190 this device", style = MaterialTheme.typography.bodySmall)
         }
@@ -182,4 +216,79 @@ private fun shortenAddress(address: String): String {
     return if (address.length > 20) {
         "${address.take(10)}...${address.takeLast(8)}"
     } else address
+}
+
+@Composable
+private fun QuickAddContactDialog(
+    signer: SignerInfo,
+    existingContacts: List<ContactWithFingerprints>,
+    onDismiss: () -> Unit,
+    onSave: (label: String, fingerprint: String, existingContactId: Long?) -> Unit,
+) {
+    var label by remember { mutableStateOf(signer.contactLabel ?: "") }
+    var selectedContactId by remember { mutableStateOf<Long?>(signer.contactId) }
+    var showExisting by remember { mutableStateOf(signer.contactId != null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (signer.contactLabel != null) "Edit Contact"
+                else "Label Cosigner ${signer.fingerprint}"
+            )
+        },
+        text = {
+            Column {
+                if (!showExisting) {
+                    OutlinedTextField(
+                        value = label,
+                        onValueChange = { if (it.length <= 50) label = it },
+                        label = { Text("Contact name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (existingContacts.isNotEmpty()) {
+                        TextButton(onClick = { showExisting = true }) {
+                            Text("Or add to existing contact")
+                        }
+                    }
+                } else {
+                    Text("Add to existing contact:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    existingContacts.forEach { cwf ->
+                        TextButton(
+                            onClick = { selectedContactId = cwf.contact.id },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                cwf.contact.label,
+                                color = if (selectedContactId == cwf.contact.id)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    TextButton(onClick = { showExisting = false; selectedContactId = null }) {
+                        Text("Or create new contact")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (showExisting && selectedContactId != null) {
+                        onSave("", signer.fingerprint, selectedContactId)
+                    } else if (label.trim().isNotEmpty()) {
+                        onSave(label.trim(), signer.fingerprint, null)
+                    }
+                    onDismiss()
+                },
+                enabled = (showExisting && selectedContactId != null) || label.trim().isNotEmpty(),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

@@ -10,16 +10,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.InboxStatus
 import com.remotesigner.nostr.formatRelativeTime
 
 @Composable
 fun InboxSection(
-    items: List<InboxItem>,
-    onSign: (InboxItem) -> Unit,
-    onDelete: (InboxItem) -> Unit,
-    onItemTap: (InboxItem) -> Unit = {},
+    items: List<InboxItemEntity>,
+    onSign: (InboxItemEntity) -> Unit,
+    onDelete: (InboxItemEntity) -> Unit,
+    onItemTap: (InboxItemEntity) -> Unit = {},
 ) {
     if (items.isEmpty()) return
 
@@ -34,10 +34,10 @@ fun InboxSection(
 
 @Composable
 fun InboxItemCard(
-    item: InboxItem,
-    onSign: (InboxItem) -> Unit,
-    onDelete: (InboxItem) -> Unit,
-    onItemTap: (InboxItem) -> Unit = {},
+    item: InboxItemEntity,
+    onSign: (InboxItemEntity) -> Unit,
+    onDelete: (InboxItemEntity) -> Unit,
+    onItemTap: (InboxItemEntity) -> Unit = {},
 ) {
     val isTappable = item.status == InboxStatus.SIGNED || item.status == InboxStatus.BROADCAST
 

@@ -80,7 +80,7 @@ class NostrReceiverTest {
 
     @Test
     fun receiver_parsesValidEvent_callsOnItem() {
-        val received = CopyOnWriteArrayList<InboxItem>()
+        val received = CopyOnWriteArrayList<InboxItemEntity>()
         val latch = CountDownLatch(1)
         val receiver = NostrReceiver(
             keyManager = keyManager,
@@ -107,7 +107,7 @@ class NostrReceiverTest {
 
     @Test
     fun receiver_deduplicatesByEventId() {
-        val received = CopyOnWriteArrayList<InboxItem>()
+        val received = CopyOnWriteArrayList<InboxItemEntity>()
         val latch = CountDownLatch(1)
         val receiver = NostrReceiver(
             keyManager = keyManager,
@@ -180,7 +180,7 @@ class NostrReceiverTest {
 
     @Test
     fun receiver_parsesEventWithSlashesInContent() {
-        val received = CopyOnWriteArrayList<InboxItem>()
+        val received = CopyOnWriteArrayList<InboxItemEntity>()
         val latch = CountDownLatch(1)
         val receiver = NostrReceiver(
             keyManager = keyManager,

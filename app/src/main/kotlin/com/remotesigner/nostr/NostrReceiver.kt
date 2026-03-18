@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
  */
 class NostrReceiver(
     private val keyManager: NostrKeyManager,
-    private val onItem: (InboxItem) -> Unit,
+    private val onItem: (InboxItemEntity) -> Unit,
     private val scope: CoroutineScope,
 ) {
     companion object {
@@ -134,7 +134,7 @@ class NostrReceiver(
 
             val senderNpub = Bech32.npubEncode(event.pubkey.hexToByteArray())
 
-            val item = InboxItem(
+            val item = InboxItemEntity(
                 id = event.id,
                 psbtBytes = psbtBytes,
                 label = label,

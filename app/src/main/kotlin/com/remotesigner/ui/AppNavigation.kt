@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.remotesigner.data.ContactWithFingerprints
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerViewModel
 import android.nfc.NfcAdapter
@@ -33,6 +34,7 @@ fun AppRoot(
     val relayCount by viewModel.relayConnectedCount.collectAsStateWithLifecycle()
     val relayStatuses by viewModel.relayStatuses.collectAsStateWithLifecycle()
     val nfcTagResult by viewModel.nfcTagResult.collectAsStateWithLifecycle()
+    val contacts by viewModel.contacts.collectAsStateWithLifecycle(initialValue = emptyList())
     val context = LocalContext.current
     val nfcAvailable = remember { NfcAdapter.getDefaultAdapter(context) != null }
 
@@ -67,11 +69,16 @@ fun AppRoot(
             onSignInboxItem = { item -> viewModel.signInboxItem(item) },
             onDeleteInboxItem = { item -> viewModel.deleteInboxItem(item.id) },
             onItemTap = { item -> viewModel.openInboxResult(item) },
+            onContacts = { viewModel.showContacts() },
         )
         is AppState.TransactionReview -> TransactionReviewScreen(
             state = s,
+            contacts = contacts,
             onSign = { viewModel.signWithTrezor() },
             onCancel = { viewModel.goHome() },
+            onSaveContact = { label, fingerprint, existingId ->
+                viewModel.saveContact(label, fingerprint, existingId)
+            },
         )
         is AppState.Signing -> SigningScreen(
             message = s.message,
@@ -110,6 +117,15 @@ fun AppRoot(
         is AppState.Error -> ErrorScreen(
             message = s.message,
             onHome = { viewModel.goHome() },
+        )
+        is AppState.Contacts -> ContactsScreen(
+            contacts = contacts,
+            onBack = { viewModel.goHome() },
+            onAddContact = { label, fp -> viewModel.saveContact(label, fp, null) },
+            onUpdateContact = { id, label, npub -> viewModel.updateContact(id, label, npub) },
+            onAddFingerprint = { id, fp -> viewModel.addFingerprintToContact(id, fp) },
+            onDeleteContact = { id -> viewModel.deleteContact(id) },
+            onDeleteFingerprint = { id -> viewModel.deleteFingerprint(id) },
         )
     }
 }

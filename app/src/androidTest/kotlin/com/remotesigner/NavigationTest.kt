@@ -37,8 +37,10 @@ class NavigationTest {
                     )
                     is AppState.TransactionReview -> TransactionReviewScreen(
                         state = current,
+                        contacts = emptyList(),
                         onSign = {},
                         onCancel = {},
+                        onSaveContact = { _, _, _ -> },
                     )
                     is AppState.Signing -> SigningScreen(
                         message = current.message,
@@ -55,6 +57,7 @@ class NavigationTest {
                         onHome = {},
                     )
                     is AppState.Error -> Unit
+                    is AppState.Contacts -> Unit
                 }
             }
         }

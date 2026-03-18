@@ -1,12 +1,17 @@
 package com.remotesigner.nostr
 
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
 enum class InboxStatus { PENDING, SIGNING, SIGNED, BROADCAST, FAILED }
 
 enum class RelayStatus { CONNECTING, CONNECTED, DISCONNECTED, ERROR }
 
-data class InboxItem(
-    val id: String,
-    val psbtBytes: ByteArray,
+@Entity(tableName = "inbox_items")
+data class InboxItemEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(typeAffinity = ColumnInfo.BLOB) val psbtBytes: ByteArray,
     val label: String,
     val amount: String = "",
     val senderNpub: String,
@@ -18,7 +23,7 @@ data class InboxItem(
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is InboxItem) return false
+        if (other !is InboxItemEntity) return false
         return id == other.id
     }
     override fun hashCode(): Int = id.hashCode()

@@ -27,7 +27,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.RelayStatus
 
 @Composable
@@ -35,11 +35,12 @@ fun HomeScreen(
     npub: String,
     relayCount: Int,
     relayStatuses: Map<String, RelayStatus>,
-    inboxItems: List<InboxItem>,
+    inboxItems: List<InboxItemEntity>,
     onPsbtSelected: (Uri) -> Unit,
-    onSignInboxItem: (InboxItem) -> Unit,
-    onDeleteInboxItem: (InboxItem) -> Unit,
-    onItemTap: (InboxItem) -> Unit = {},
+    onSignInboxItem: (InboxItemEntity) -> Unit,
+    onDeleteInboxItem: (InboxItemEntity) -> Unit,
+    onItemTap: (InboxItemEntity) -> Unit = {},
+    onContacts: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
@@ -97,6 +98,13 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Open PSBT File")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onContacts,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Contacts")
             }
 
             Spacer(modifier = Modifier.height(16.dp))

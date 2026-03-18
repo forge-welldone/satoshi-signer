@@ -6,31 +6,30 @@ import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
+import com.remotesigner.data.AppDatabase
+import com.remotesigner.data.Contact
+import com.remotesigner.data.ContactFingerprint
+import com.remotesigner.data.ContactWithFingerprints
+import com.remotesigner.data.FingerprintValidator
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.nfc.NfcReadResult
-import com.remotesigner.nostr.InboxItem
+import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.InboxStatus
-import com.remotesigner.nostr.InboxStore
 import com.remotesigner.nostr.NostrKeyManager
 import com.remotesigner.nostr.NostrReceiver
 import com.remotesigner.nostr.formatBtcAmount
-import com.remotesigner.nostr.removeExpiredItems
 import com.remotesigner.usb.SigningBridge
 import com.remotesigner.usb.TrezorUsbManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 data class TxInput(
     val address: String,
@@ -48,6 +47,8 @@ data class SignerInfo(
     val fingerprint: String,
     val signed: Boolean,
     val isThisDevice: Boolean = false,
+    val contactLabel: String? = null,
+    val contactId: Long? = null,
 )
 
 sealed class AppState {
@@ -75,6 +76,7 @@ sealed class AppState {
         val network: String = "main",
     ) : AppState()
     data class Error(val message: String) : AppState()
+    data object Contacts : AppState()
 }
 
 data class PassphraseRequest(
@@ -92,6 +94,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val pythonBridge = PythonBridge()
+    private val contactDao = AppDatabase.getInstance(application).contactDao()
+    val contacts = contactDao.getAllWithFingerprints()
     val trezorUsb = TrezorUsbManager(application)
 
     private var currentPsbtBytes: ByteArray? = null
@@ -130,10 +134,10 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     // --- Nostr inbox ---
     val keyManager = NostrKeyManager(application)
-    private val _inboxItems = MutableStateFlow<List<InboxItem>>(emptyList())
-    val inboxItems: StateFlow<List<InboxItem>> = _inboxItems.asStateFlow()
+    private val inboxDao = AppDatabase.getInstance(application).inboxDao()
+    val inboxItems: StateFlow<List<InboxItemEntity>> = inboxDao.getAll()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private var currentSigningInboxId: String? = null
-    private val inboxStore = InboxStore(File(application.filesDir, "inbox.json"))
 
     private val nostrReceiver = NostrReceiver(
         keyManager = keyManager,
@@ -144,32 +148,37 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     val relayConnectedCount: StateFlow<Int> = nostrReceiver.connectedCount
     val relayStatuses: StateFlow<Map<String, com.remotesigner.nostr.RelayStatus>> = nostrReceiver.relayStatuses
 
+    private val inboxSeedJob: Job
+
     init {
-        // Load persisted inbox, clean expired, seed seen IDs
-        val persisted = removeExpiredItems(inboxStore.load())
-        if (persisted.isNotEmpty()) {
-            _inboxItems.value = persisted.sortedByDescending { it.receivedAt }
-            nostrReceiver.seedSeenIds(persisted.map { it.id }.toSet())
+        inboxSeedJob = viewModelScope.launch {
+            val now = System.currentTimeMillis() / 1000
+            inboxDao.deleteExpired(
+                pendingCutoff = now - 86_400,
+                signedCutoff = now - 86_400 * 7,
+            )
+            val persisted = inboxDao.getAllOnce()
+            if (persisted.isNotEmpty()) {
+                nostrReceiver.seedSeenIds(persisted.map { it.id }.toSet())
+            }
         }
-        // Auto-save on changes (debounced)
-        @OptIn(FlowPreview::class)
-        _inboxItems
-            .debounce(500)
-            .onEach { items -> inboxStore.save(items) }
-            .launchIn(viewModelScope)
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        inboxStore.save(_inboxItems.value)
-    }
-
-    private fun handleInboxEvent(item: InboxItem) {
-        // Skip if already persisted (e.g., SIGNED/BROADCAST item re-delivered by relay)
-        if (_inboxItems.value.any { it.id == item.id }) return
-
+    fun startNostrReceiver() {
         viewModelScope.launch {
-            val enrichedItem = try {
+            inboxSeedJob.join()
+            nostrReceiver.connect()
+        }
+    }
+
+    fun stopNostrReceiver() = nostrReceiver.disconnect()
+
+    private fun handleInboxEvent(item: InboxItemEntity) {
+        viewModelScope.launch {
+            val inserted = inboxDao.insertIgnore(item)
+            if (inserted == -1L) return@launch
+
+            try {
                 val result = withContext(Dispatchers.IO) {
                     pythonBridge.parsePsbt(item.psbtBytes)
                 }
@@ -179,33 +188,28 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     .filter { it["is_change"] as? Boolean != true }
                     .sumOf { (it["amount"] as? Number)?.toLong() ?: 0L }
                 val network = result["network"]?.toString() ?: "main"
-                item.copy(amount = formatBtcAmount(totalSent), network = network)
+                inboxDao.updateParsedFields(
+                    id = item.id,
+                    amount = formatBtcAmount(totalSent),
+                    network = network,
+                )
             } catch (_: Exception) {
-                item
-            }
-            _inboxItems.update { current ->
-                (current + enrichedItem).sortedByDescending { it.receivedAt }
+                // Keep original row if parse fails
             }
         }
     }
 
-    fun signInboxItem(item: InboxItem) {
+    fun signInboxItem(item: InboxItemEntity) {
         currentSigningInboxId = item.id
-        updateInboxItem(item.id) { it.copy(status = InboxStatus.SIGNING) }
+        viewModelScope.launch { inboxDao.updateStatus(item.id, InboxStatus.SIGNING) }
         loadPsbt(item.psbtBytes)
     }
 
     fun deleteInboxItem(id: String) {
-        _inboxItems.update { current -> current.filter { it.id != id } }
+        viewModelScope.launch { inboxDao.delete(id) }
     }
 
-    private fun updateInboxItem(id: String, transform: (InboxItem) -> InboxItem) {
-        _inboxItems.update { current ->
-            current.map { if (it.id == id) transform(it) else it }
-        }
-    }
-
-    fun openInboxResult(item: InboxItem) {
+    fun openInboxResult(item: InboxItemEntity) {
         if (item.status != InboxStatus.SIGNED && item.status != InboxStatus.BROADCAST) return
         currentSigningInboxId = item.id
         currentPsbtBytes = item.psbtBytes
@@ -217,9 +221,6 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             network = item.network,
         )
     }
-
-    fun startNostrReceiver() = nostrReceiver.connect()
-    fun stopNostrReceiver() = nostrReceiver.disconnect()
 
     fun loadPsbt(uri: Uri) {
         viewModelScope.launch {
@@ -268,12 +269,24 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             val fee = (result["fee"] as? Number)?.toLong() ?: 0
             val totalSent = outputs.filter { !it.isChange }.sumOf { it.amount }
 
-            val signers = (result["signers"] as? List<Map<String, Any?>>)?.map { s ->
+            val rawSigners = (result["signers"] as? List<Map<String, Any?>>)?.map { s ->
                 SignerInfo(
                     fingerprint = s["fingerprint"]?.toString() ?: "",
                     signed = s["signed"] as? Boolean ?: false,
                 )
             } ?: emptyList()
+
+            val signerFingerprints = rawSigners.map { it.fingerprint }
+            val contactMap = contactDao.findByFingerprints(signerFingerprints)
+                .flatMap { cwf -> cwf.fingerprints.map { fp -> fp.fingerprint to cwf } }
+                .toMap()
+            val signers = rawSigners.map { signer ->
+                val contact = contactMap[signer.fingerprint]
+                signer.copy(
+                    contactLabel = contact?.contact?.label,
+                    contactId = contact?.contact?.id,
+                )
+            }
 
             val warnings = mutableListOf<String>()
             if (fee > 1_000_000) {
@@ -427,12 +440,11 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 "complete" -> {
                     val inboxId = currentSigningInboxId
                     if (inboxId != null) {
-                        updateInboxItem(inboxId) {
-                            it.copy(
-                                status = InboxStatus.SIGNED,
-                                rawHex = result["raw_tx"]?.toString(),
-                                network = network,
-                            )
+                        val rawTx = result["raw_tx"]?.toString()
+                        if (rawTx != null) {
+                            inboxDao.updateSigned(inboxId, InboxStatus.SIGNED, rawTx, network)
+                        } else {
+                            inboxDao.updateStatus(inboxId, InboxStatus.SIGNED)
                         }
                     }
                     _state.value = AppState.Result(
@@ -454,7 +466,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 "cancelled" -> {
                     val inboxId = currentSigningInboxId
                     if (inboxId != null) {
-                        updateInboxItem(inboxId) { it.copy(status = InboxStatus.PENDING) }
+                        inboxDao.updateStatus(inboxId, InboxStatus.PENDING)
                     }
                     if (currentPsbtBytes != null) {
                         parsePsbt(currentPsbtBytes!!)
@@ -465,7 +477,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 else -> {
                     val inboxId = currentSigningInboxId
                     if (inboxId != null) {
-                        updateInboxItem(inboxId) { it.copy(status = InboxStatus.FAILED) }
+                        inboxDao.updateStatus(inboxId, InboxStatus.FAILED)
                     }
                     _state.value = AppState.Error(
                         result["message"]?.toString() ?: "Signing failed"
@@ -475,7 +487,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) {
             val inboxId = currentSigningInboxId
             if (inboxId != null) {
-                updateInboxItem(inboxId) { it.copy(status = InboxStatus.FAILED) }
+                inboxDao.updateStatus(inboxId, InboxStatus.FAILED)
             }
             val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
             _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
@@ -509,9 +521,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 val inboxId = currentSigningInboxId
                 if (inboxId != null && txid != null) {
-                    updateInboxItem(inboxId) {
-                        it.copy(status = InboxStatus.BROADCAST, txid = txid)
-                    }
+                    inboxDao.updateBroadcast(inboxId, InboxStatus.BROADCAST, txid)
                 }
             } else {
                 _state.value = state.copy(
@@ -524,7 +534,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     fun cancelSigning() {
         val inboxId = currentSigningInboxId
         if (inboxId != null) {
-            updateInboxItem(inboxId) { it.copy(status = InboxStatus.PENDING) }
+            viewModelScope.launch { inboxDao.updateStatus(inboxId, InboxStatus.PENDING) }
         }
         currentSigningCallback?.cancel()
         currentSigningCallback = null
@@ -543,18 +553,96 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun showContacts() {
+        _state.value = AppState.Contacts
+    }
+
+    fun saveContact(label: String, fingerprint: String, existingContactId: Long?) {
+        val normalized = FingerprintValidator.normalize(fingerprint) ?: return
+        val trimmedLabel = label.trim()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            if (existingContactId != null) {
+                contactDao.insertFingerprint(
+                    ContactFingerprint(contactId = existingContactId, fingerprint = normalized)
+                )
+            } else {
+                if (trimmedLabel.isEmpty() || trimmedLabel.length > 50) return@launch
+                val contactId = contactDao.insertContact(Contact(label = trimmedLabel))
+                contactDao.insertFingerprint(
+                    ContactFingerprint(contactId = contactId, fingerprint = normalized)
+                )
+            }
+            reEnrichSigners()
+        }
+    }
+
+    fun updateContact(contactId: Long, newLabel: String, npub: String?) {
+        val trimmedLabel = newLabel.trim()
+        if (trimmedLabel.isEmpty() || trimmedLabel.length > 50) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.updateContact(Contact(id = contactId, label = trimmedLabel, npub = npub?.trim()?.ifEmpty { null }))
+        }
+    }
+
+    fun addFingerprintToContact(contactId: Long, fingerprint: String) {
+        val normalized = FingerprintValidator.normalize(fingerprint) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.insertFingerprint(
+                ContactFingerprint(contactId = contactId, fingerprint = normalized)
+            )
+            reEnrichSigners()
+        }
+    }
+
+    fun deleteContact(contactId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.deleteContact(contactId)
+            reEnrichSigners()
+        }
+    }
+
+    fun deleteFingerprint(fingerprintId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            contactDao.deleteFingerprint(fingerprintId)
+            reEnrichSigners()
+        }
+    }
+
+    private suspend fun reEnrichSigners() {
+        val currentState = _state.value
+        if (currentState is AppState.TransactionReview) {
+            val fingerprints = currentState.signers.map { it.fingerprint }
+            val contactMap = contactDao.findByFingerprints(fingerprints)
+                .flatMap { cwf -> cwf.fingerprints.map { fp -> fp.fingerprint to cwf } }
+                .toMap()
+            val enriched = currentState.signers.map { signer ->
+                val contact = contactMap[signer.fingerprint]
+                signer.copy(
+                    contactLabel = contact?.contact?.label,
+                    contactId = contact?.contact?.id,
+                )
+            }
+            _state.value = currentState.copy(signers = enriched)
+        }
+    }
+
     fun goHome() {
-        // Update inbox item status based on signing result (safety net — main updates happen earlier)
         val inboxId = currentSigningInboxId
         if (inboxId != null) {
             val currentState = _state.value
-            when (currentState) {
-                is AppState.Result -> updateInboxItem(inboxId) {
-                    // Don't overwrite BROADCAST back to SIGNED
-                    if (it.status != InboxStatus.BROADCAST) it.copy(status = InboxStatus.SIGNED) else it
+            viewModelScope.launch {
+                when (currentState) {
+                    is AppState.Result -> {
+                        val item = inboxItems.value.find { it.id == inboxId }
+                        if (item != null && item.status != InboxStatus.BROADCAST) {
+                            inboxDao.updateStatus(inboxId, InboxStatus.SIGNED)
+                        }
+                    }
+                    is AppState.Error -> inboxDao.updateStatus(inboxId, InboxStatus.FAILED)
+                    else -> {}
                 }
-                is AppState.Error -> updateInboxItem(inboxId) { it.copy(status = InboxStatus.FAILED) }
-                else -> {}
             }
             currentSigningInboxId = null
         }

@@ -25,8 +25,10 @@ class ScreenRenderTest {
             SatoshiSignerTheme {
                 TransactionReviewScreen(
                     state = TestFixtures.reviewState,
+                    contacts = emptyList(),
                     onSign = {},
                     onCancel = {},
+                    onSaveContact = { _, _, _ -> },
                 )
             }
         }
@@ -41,8 +43,10 @@ class ScreenRenderTest {
             SatoshiSignerTheme {
                 TransactionReviewScreen(
                     state = TestFixtures.reviewStateWithOpReturn,
+                    contacts = emptyList(),
                     onSign = {},
                     onCancel = {},
+                    onSaveContact = { _, _, _ -> },
                 )
             }
         }

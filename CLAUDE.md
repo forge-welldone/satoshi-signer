@@ -51,14 +51,14 @@ Android test setup requires a running emulator: `emulator -avd test_device -no-a
 **Two-language bridge pattern:** Kotlin handles UI, USB, and Android lifecycle. Python handles all Bitcoin logic (PSBT parsing, trezorlib signing, broadcasting). They communicate via Chaquopy.
 
 ```
-Compose UI (5 screens) → SignerViewModel (sealed class state machine)
+Compose UI (6 screens) → SignerViewModel (sealed class state machine)
     → PythonBridge (Chaquopy) → Python modules
     → TrezorUsbManager / UsbBridge (Android USB Host API)
     → NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
     → NFC reader mode (Activity) → NDEF text tags (passphrase import)
 ```
 
-**State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error`). UI renders the screen matching current state.
+**State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error` and `Contacts`). UI renders the screen matching current state.
 
 **USB bridge inversion:** Python's trezorlib needs USB access, but Android USB APIs are Kotlin-only. Solution: Kotlin's `UsbBridge` does raw 64-byte interrupt endpoint I/O, Python's `AndroidTransport`/`AndroidHandle` wrap it to satisfy trezorlib's `Transport` protocol. Python calls back into Kotlin for every USB read/write.
 
@@ -75,14 +75,15 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 ## Source Layout
 
 - `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge, Nostr)
+- `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation
 - `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
-- `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model, `InboxStore` persistence)
+- `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
 - `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
 - `app/src/test/kotlin/com/remotesigner/nfc/` — JVM unit tests for NDEF parsing (no Android needed)
-- `app/src/test/kotlin/com/remotesigner/nostr/` — JVM unit tests for InboxStore persistence and expiry logic
+- `app/schemas/` — Room schema JSON exports for migration testing
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
 - `docs/superpowers/specs/` — Design specifications
@@ -97,12 +98,13 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **OkHttp 4.12.0** — WebSocket client for Nostr relay connections
 - **secp256k1-kmp 0.22.0** (`fr.acinq.secp256k1:secp256k1-kmp-jni-android`) — secp256k1 ECDH for NIP-04 decryption. Lightweight JNI wrapper around Bitcoin's libsecp256k1.
 - **ZXing 3.5.3** (`com.google.zxing:core`) — QR code generation for npub display
+- **Room 2.6.1** (`androidx.room`) — Local SQLite database for contacts and inbox (with KSP annotation processor)
 - Versions managed in `gradle/libs.versions.toml`
 
 ## Design Decisions to Preserve
 
 - **Direct trezorlib, not HWI** — HWI's dependency tree (hidapi, pyserial) doesn't work under Chaquopy. We use trezorlib directly with a custom transport.
-- **Minimal state app** — No database, no wallet storage, no caching. Killed process loses the in-progress transaction. The only persisted state is the Nostr inbox (`inbox.json`) which stores signed/broadcast transaction status to survive restarts.
+- **Minimal state app** — No wallet storage, no caching. Killed process loses the in-progress transaction. Persisted state: Room database (`satoshi-signer.db`) for cosigner contacts and Nostr inbox items.
 - **App never touches private keys** — All signing happens on Trezor's secure element. No seed phrases or key material on phone.
 - **Python modules are desktop-testable** — The bridge pattern keeps Python code Android-agnostic so `pytest` works without an emulator. Desktop signing uses `DesktopUsbBridge` (WebUSB/HID) in place of Kotlin's `UsbBridge`. Recorded USB cassettes enable E2E test replay without hardware.
 - **`SigningBridge` interface** — Common interface (`open`/`close`/`writeChunk`/`readChunk`) implemented by `UsbBridge` (production) and `PlaybackBridge` (tests). Enables cassette-driven E2E tests on the Android emulator via `signWithBridge()`. Test path passes `null` callback to avoid passphrase dialog deadlock (Python falls back to on-device passphrase).
@@ -112,8 +114,9 @@ Compose UI (5 screens) → SignerViewModel (sealed class state machine)
 - **Nostr PSBT delivery** — PSBTs can be received from Electrum over Nostr relays (kind 4 events, NIP-04 encryption). `NostrReceiver` connects via OkHttp WebSocket in `onStart()`/`onStop()`. No background service — PSBTs wait on the relay.
 - **Nostr keypair is transport identity only** — Random secp256k1 key in SharedPreferences (`nostr_keys`). Not a signing key, protects nothing of value. npub displayed on Home screen as QR + copyable text for sharing with Electrum.
 - **secp256k1-kmp point multiplication for NIP-04** — `Secp256k1.get().ecdh()` returns SHA-256(compressed_shared_point), NOT the raw x-coordinate NIP-04 needs. Instead, `Nip04.computeSharedSecret()` uses `pubKeyTweakMul(compressedPubkey, privkey)` to get the shared point, then extracts the 32-byte x-coordinate (bytes 1-33 of the 65-byte uncompressed result). The 0x02 prefix is always used for x-only pubkeys (even parity assumption — works because the x-coordinate is the same regardless of y-parity).
-- **Inbox persisted to JSON file** — `_inboxItems: MutableStateFlow<List<InboxItem>>` in ViewModel, separate from the navigation `_state`. `InboxStore` saves to `inbox.json` in app-internal storage (debounced 500ms, flushed on `onCleared()`). On startup, persisted items are loaded, expired items removed (24h for pending/failed/signing, 7d for signed/broadcast), and their IDs seeded into `NostrReceiver.seenIds` so relays don't overwrite richer local state. Deduplication by Nostr event ID. Signed/broadcast items store `rawHex`, `txid`, and `network` so the Result screen can be reopened from an inbox card.
+- **Inbox persisted via Room** — `InboxItemEntity` is a Room `@Entity` in `AppDatabase` (version 2). `InboxDao` provides reactive `Flow<List<InboxItemEntity>>` collected via `stateIn` in the ViewModel. Write operations use targeted SQL updates (`updateStatus`, `updateSigned`, `updateBroadcast`) to avoid race conditions. On startup, `deleteExpired()` removes old items (24h for pending/failed/signing, 7d for signed/broadcast), then `getAllOnce()` seeds `NostrReceiver.seenIds` so relays don't overwrite richer local state. Deduplication by Nostr event ID uses conflict-safe `insertIgnore` (not `exists()` + `upsert()`). Signed/broadcast items store `rawHex`, `txid`, and `network` so the Result screen can be reopened from an inbox card.
 - **Passphrase input disables keyboard learning** — The on-phone passphrase `OutlinedTextField` uses `KeyboardType.Password` + `autoCorrect = false` so the IME never learns, suggests, or autocompletes passphrases. `PasswordVisualTransformation` alone only masks display — `KeyboardOptions` are required to control IME behavior.
+- **Cosigner contacts with fingerprint resolution** — Room database stores contacts with one-to-many fingerprints. `TransactionReview` batch-resolves signer fingerprints → labels via `findByFingerprints()`. Quick-add dialog on signer rows creates/assigns contacts without leaving the review screen (modal dialogs, not navigation). Separate `ContactsScreen` for full CRUD. Fingerprints are validated as exactly 8 hex chars, stored lowercase, unique across all contacts. Contact `npub` field exists for future PSBT forwarding via Nostr but is not yet wired to sending logic.
 - **NFC passphrase import** — Passphrase can be read from any NFC tag (YubiKey static password or generic NDEF tag) as an alternative to typing. Uses `enableReaderMode()` on the Activity (not foreground dispatch) — enabled in `onResume()`, disabled in `onPause()`. Reader mode is always active while the Activity is in the foreground to prevent other NFC-handling apps from intercepting tags and stealing focus; the `onTagDiscovered` callback silently ignores tags unless `nfcWaitingForTag` is true. NDEF RTD_TEXT parsing is a pure function (`parseNdefTextPayload`) for testability. NFC is optional (`android:required="false"`) — the option is hidden on devices without NFC. The passphrase feeds into the same `submitPassphrase()` → `LinkedBlockingQueue` path as keyboard input — zero Python changes.
 
 ## Development Practices
