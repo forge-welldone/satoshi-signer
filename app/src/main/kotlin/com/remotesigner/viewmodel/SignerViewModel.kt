@@ -64,6 +64,7 @@ sealed class AppState {
         val requiredSigs: Int = 0,
         val totalSigs: Int = 0,
         val network: String = "main",
+        val description: String? = null,
     ) : AppState()
     data class Signing(val message: String, val log: String = "") : AppState()
     data class Result(
