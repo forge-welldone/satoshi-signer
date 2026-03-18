@@ -510,7 +510,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                pythonBridge.broadcast(state.rawHex)
+                pythonBridge.broadcast(state.rawHex, state.network)
             }
 
             if (result["status"] == "ok") {
@@ -635,8 +635,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             viewModelScope.launch {
                 when (currentState) {
                     is AppState.Result -> {
-                        val item = inboxItems.value.find { it.id == inboxId }
-                        if (item != null && item.status != InboxStatus.BROADCAST) {
+                        if (currentState.txid == null) {
                             inboxDao.updateStatus(inboxId, InboxStatus.SIGNED)
                         }
                     }
