@@ -29,7 +29,7 @@ InboxItemEntity.label
    - Add `private var currentDescription: String? = null`
    - In `signInboxItem()`: set `currentDescription = item.label` before `loadPsbt()`
    - In `parsePsbt()`: pass `currentDescription` into the `TransactionReview` state
-   - In `loadPsbt(Uri)` and `loadPsbt(ByteArray)` (file picker / clipboard paths): set `currentDescription = null`
+   - In `loadPsbt(Uri)` (file picker path): set `currentDescription = null`. Do NOT clear in `loadPsbt(ByteArray)` — `signInboxItem()` sets description then calls that method
    - `currentDescription` is intentionally preserved across cancel-and-re-parse cycles (e.g. `cancelSigning()` re-parses the same PSBT) — the inbox label should survive cancellation
 
 3. **`TransactionReviewScreen`** — After the title and `Spacer(16.dp)`, before warnings:
