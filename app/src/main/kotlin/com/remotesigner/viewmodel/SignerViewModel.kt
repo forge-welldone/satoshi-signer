@@ -101,6 +101,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var currentPsbtBytes: ByteArray? = null
     private var currentNetwork: String = "main"
+    private var currentDescription: String? = null
     private var currentUsbBridge: SigningBridge? = null
     private var signingJob: Job? = null
     private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
@@ -202,6 +203,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun signInboxItem(item: InboxItemEntity) {
         currentSigningInboxId = item.id
+        currentDescription = item.label.ifBlank { null }
         viewModelScope.launch { inboxDao.updateStatus(item.id, InboxStatus.SIGNING) }
         loadPsbt(item.psbtBytes)
     }
@@ -224,6 +226,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun loadPsbt(uri: Uri) {
+        currentDescription = null
         viewModelScope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) {
@@ -305,6 +308,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 requiredSigs = (result["required_sigs"] as? Number)?.toInt() ?: 0,
                 totalSigs = (result["total_sigs"] as? Number)?.toInt() ?: 0,
                 network = currentNetwork,
+                description = currentDescription,
             )
         } catch (e: Exception) {
             _state.value = AppState.Error("Invalid PSBT: ${e.message}")
@@ -647,6 +651,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
             currentSigningInboxId = null
         }
         currentPsbtBytes = null
+        currentDescription = null
         _state.value = AppState.Home
     }
 }
