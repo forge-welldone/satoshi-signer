@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.remotesigner.data.ContactWithFingerprints
 import com.remotesigner.data.FingerprintValidator
@@ -38,6 +39,17 @@ fun TransactionReviewScreen(
         ) {
             Text("Transaction Details", style = MaterialTheme.typography.headlineMedium)
             Spacer(modifier = Modifier.height(16.dp))
+
+            if (!state.description.isNullOrBlank()) {
+                Text(
+                    state.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             state.warnings.forEach { warning ->
                 Card(

@@ -55,6 +55,43 @@ class ScreenRenderTest {
     }
 
     @Test
+    fun transactionReviewScreen_displaysDescription() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                TransactionReviewScreen(
+                    state = TestFixtures.reviewStateWithDescription,
+                    contacts = emptyList(),
+                    onSign = {},
+                    onCancel = {},
+                    onSaveContact = { _, _, _ -> },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Payment for server hosting — March 2026")
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun transactionReviewScreen_hidesDescriptionWhenNull() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                TransactionReviewScreen(
+                    state = TestFixtures.reviewState,
+                    contacts = emptyList(),
+                    onSign = {},
+                    onCancel = {},
+                    onSaveContact = { _, _, _ -> },
+                )
+            }
+        }
+        // reviewState has description = null (default)
+        composeTestRule.onNodeWithText("Transaction Details").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Sign with Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Payment for server hosting — March 2026")
+            .assertDoesNotExist()
+    }
+
+    @Test
     fun signingScreen_displaysProgress() {
         val state = TestFixtures.signingState
         composeTestRule.setContent {

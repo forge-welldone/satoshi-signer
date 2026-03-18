@@ -57,6 +57,17 @@ object TestFixtures {
         warnings = emptyList(),
     )
 
+    val reviewStateWithDescription = AppState.TransactionReview(
+        inputs = sampleInputs,
+        outputs = sampleOutputs,
+        fee = 2_100L,
+        totalSent = 5_000_000L,
+        status = "needs_sig",
+        signers = sampleSigners,
+        warnings = emptyList(),
+        description = "Payment for server hosting — March 2026",
+    )
+
     val signingState = AppState.Signing(message = "Confirm on your Trezor...")
 
     val signingStateWithLog = AppState.Signing(
