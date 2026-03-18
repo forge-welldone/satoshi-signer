@@ -58,6 +58,8 @@ Create `app/src/main/kotlin/com/remotesigner/data/InboxDao.kt`:
 package com.remotesigner.data
 
 import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import com.remotesigner.nostr.InboxItemEntity
@@ -71,6 +73,12 @@ interface InboxDao {
 
     @Query("SELECT * FROM inbox_items")
     suspend fun getAllOnce(): List<InboxItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(item: InboxItemEntity): Long
+
+    @Query("UPDATE inbox_items SET amount = :amount, network = :network WHERE id = :id")
+    suspend fun updateParsedFields(id: String, amount: String, network: String)
 
     @Query("SELECT COUNT(*) FROM inbox_items WHERE id = :id")
     suspend fun exists(id: String): Int
@@ -240,12 +248,14 @@ private var currentSigningInboxId: String? = null
 
 Note: `contactDao` is already declared on line 103. The `inboxDao` declaration goes in the inbox section (around line 143).
 
-- [ ] **Step 2: Replace init block (lines 157-170)**
+- [ ] **Step 2: Replace init block and gate Nostr connect until seeding completes (lines 157-170 and 231-232)**
 
 Remove the entire init block and replace with:
 ```kotlin
+private val inboxSeedJob: Job
+
 init {
-    viewModelScope.launch {
+    inboxSeedJob = viewModelScope.launch {
         val now = System.currentTimeMillis() / 1000
         inboxDao.deleteExpired(
             pendingCutoff = now - 86_400,
@@ -257,21 +267,33 @@ init {
         }
     }
 }
+
+fun startNostrReceiver() {
+    viewModelScope.launch {
+        inboxSeedJob.join()
+        nostrReceiver.connect()
+    }
+}
+
+fun stopNostrReceiver() = nostrReceiver.disconnect()
 ```
+
+This removes the startup race while preserving lifecycle behavior in `MainActivity.onStart()` / `onStop()`.
 
 - [ ] **Step 3: Remove `onCleared()` override (lines 172-175)**
 
 Delete the entire `onCleared()` method — no more flush needed.
 
-- [ ] **Step 4: Replace `handleInboxEvent` (lines 177-200)**
+- [ ] **Step 4: Replace `handleInboxEvent` (lines 177-200) with conflict-safe insert**
 
-Replace with DAO-based version using `exists()` check:
+Replace with DAO-based version using atomic `insertIgnore` + targeted update (avoid `exists()` + `upsert()` race):
 ```kotlin
 private fun handleInboxEvent(item: InboxItemEntity) {
     viewModelScope.launch {
-        if (inboxDao.exists(item.id) > 0) return@launch
+        val inserted = inboxDao.insertIgnore(item)
+        if (inserted == -1L) return@launch
 
-        val enrichedItem = try {
+        try {
             val result = withContext(Dispatchers.IO) {
                 pythonBridge.parsePsbt(item.psbtBytes)
             }
@@ -281,11 +303,14 @@ private fun handleInboxEvent(item: InboxItemEntity) {
                 .filter { it["is_change"] as? Boolean != true }
                 .sumOf { (it["amount"] as? Number)?.toLong() ?: 0L }
             val network = result["network"]?.toString() ?: "main"
-            item.copy(amount = formatBtcAmount(totalSent), network = network)
+            inboxDao.updateParsedFields(
+                id = item.id,
+                amount = formatBtcAmount(totalSent),
+                network = network,
+            )
         } catch (_: Exception) {
-            item
+            // Keep original row if parse fails
         }
-        inboxDao.upsert(enrichedItem)
     }
 }
 ```
@@ -445,6 +470,7 @@ Remove unused imports from `SignerViewModel.kt`:
 Add new imports:
 - `kotlinx.coroutines.flow.SharingStarted`
 - `kotlinx.coroutines.flow.stateIn`
+- `kotlinx.coroutines.Job`
 
 (Keep `com.remotesigner.nostr.InboxItemEntity`, `com.remotesigner.nostr.InboxStatus`, `com.remotesigner.nostr.formatBtcAmount`)
 
@@ -507,6 +533,9 @@ git commit -m "chore: remove InboxStore, expiry JVM tests, and org.json dep"
 
 **Files:**
 - Create: `app/src/androidTest/kotlin/com/remotesigner/InboxDaoTest.kt`
+- Create: `app/src/androidTest/kotlin/com/remotesigner/InboxMigrationTest.kt`
+- Modify: `app/build.gradle.kts`
+- Create: `app/schemas/` (Room schema export output)
 
 - [ ] **Step 1: Write the test class**
 
@@ -586,6 +615,30 @@ class InboxDaoTest {
         assertEquals(1, items.size)
         assertEquals(InboxStatus.SIGNED, items[0].status)
         assertEquals("deadbeef", items[0].rawHex)
+    }
+
+    @Test
+    fun insertIgnore_duplicateId_doesNotOverwriteExistingRow() = runTest {
+        dao.insertIgnore(makeItem(id = "event1", status = InboxStatus.BROADCAST, txid = "tx1"))
+        val result = dao.insertIgnore(makeItem(id = "event1", status = InboxStatus.PENDING))
+        assertEquals(-1L, result)
+
+        val items = dao.getAll().first()
+        assertEquals(1, items.size)
+        assertEquals(InboxStatus.BROADCAST, items[0].status)
+        assertEquals("tx1", items[0].txid)
+    }
+
+    @Test
+    fun updateParsedFields_updatesOnlyAmountAndNetwork() = runTest {
+        dao.upsert(makeItem(id = "event1", status = InboxStatus.SIGNED, rawHex = "abc", network = "main"))
+        dao.updateParsedFields("event1", "0.12340000 BTC", "test")
+
+        val items = dao.getAll().first()
+        assertEquals("0.12340000 BTC", items[0].amount)
+        assertEquals("test", items[0].network)
+        assertEquals(InboxStatus.SIGNED, items[0].status)
+        assertEquals("abc", items[0].rawHex)
     }
 
     @Test
@@ -681,12 +734,76 @@ class InboxDaoTest {
 - [ ] **Step 2: Run instrumented tests on emulator**
 
 Run: `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.remotesigner.InboxDaoTest 2>&1 | tail -30`
-Expected: All 10 tests PASS
+Expected: All 12 tests PASS
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Configure Room schema export for migration validation**
+
+Add schema export configuration in `app/build.gradle.kts`:
+
+```kotlin
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.incremental", "true")
+}
+```
+
+Create the output directory once:
+
+```bash
+mkdir -p app/schemas
+```
+
+- [ ] **Step 4: Add migration test for DB version 1 -> 2**
+
+Create `app/src/androidTest/kotlin/com/remotesigner/InboxMigrationTest.kt` using `MigrationTestHelper` and exported schemas:
+
+```kotlin
+package com.remotesigner
+
+import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.remotesigner.data.MIGRATION_1_2
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class InboxMigrationTest {
+
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        "com.remotesigner.data.AppDatabase",
+        FrameworkSQLiteOpenHelperFactory(),
+    )
+
+    @Test
+    fun migrate1To2_createsInboxItemsTable() {
+        helper.createDatabase("migration-test", 1).close()
+
+        helper.runMigrationsAndValidate(
+            "migration-test",
+            2,
+            true,
+            MIGRATION_1_2,
+        )
+    }
+}
+```
+
+- [ ] **Step 5: Run migration test on emulator**
+
+Run: `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.remotesigner.InboxMigrationTest 2>&1 | tail -30`
+Expected: migration test PASS
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add app/src/androidTest/kotlin/com/remotesigner/InboxDaoTest.kt
+git add app/src/androidTest/kotlin/com/remotesigner/InboxMigrationTest.kt
+git add app/build.gradle.kts app/schemas
 git commit -m "test: add InboxDao instrumented tests"
 ```
 
@@ -737,7 +854,7 @@ Change:
 > **Inbox persisted to JSON file** — `_inboxItems: MutableStateFlow<List<InboxItem>>` in ViewModel, separate from the navigation `_state`. `InboxStore` saves to `inbox.json` in app-internal storage (debounced 500ms, flushed on `onCleared()`). On startup, persisted items are loaded, expired items removed (24h for pending/failed/signing, 7d for signed/broadcast), and their IDs seeded into `NostrReceiver.seenIds` so relays don't overwrite richer local state. Deduplication by Nostr event ID. Signed/broadcast items store `rawHex`, `txid`, and `network` so the Result screen can be reopened from an inbox card.
 
 To:
-> **Inbox persisted via Room** — `InboxItemEntity` is a Room `@Entity` in `AppDatabase` (version 2). `InboxDao` provides reactive `Flow<List<InboxItemEntity>>` collected via `stateIn` in the ViewModel. Write operations use targeted SQL updates (`updateStatus`, `updateSigned`, `updateBroadcast`) to avoid race conditions. On startup, `deleteExpired()` removes old items (24h for pending/failed/signing, 7d for signed/broadcast), then `getAllOnce()` seeds `NostrReceiver.seenIds` so relays don't overwrite richer local state. Deduplication by Nostr event ID via `exists()` query. Signed/broadcast items store `rawHex`, `txid`, and `network` so the Result screen can be reopened from an inbox card.
+> **Inbox persisted via Room** — `InboxItemEntity` is a Room `@Entity` in `AppDatabase` (version 2). `InboxDao` provides reactive `Flow<List<InboxItemEntity>>` collected via `stateIn` in the ViewModel. Write operations use targeted SQL updates (`updateStatus`, `updateSigned`, `updateBroadcast`) to avoid race conditions. On startup, `deleteExpired()` removes old items (24h for pending/failed/signing, 7d for signed/broadcast), then `getAllOnce()` seeds `NostrReceiver.seenIds` so relays don't overwrite richer local state. Deduplication by Nostr event ID uses conflict-safe `insertIgnore` (not `exists()` + `upsert()`). Signed/broadcast items store `rawHex`, `txid`, and `network` so the Result screen can be reopened from an inbox card.
 
 Also update "Minimal state app" if it still mentions `inbox.json`:
 > Persisted state: Room database (`satoshi-signer.db`) for cosigner contacts and Nostr inbox items...
