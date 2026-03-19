@@ -40,7 +40,10 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
     except Exception as e:
         raise ValueError(f"Invalid PSBT: {e}") from e
 
-    net = NETWORKS[network]
+    # Auto-detect network from derivation paths before encoding addresses;
+    # fall back to explicit parameter if derivation paths are absent.
+    detected_network = _detect_network(psbt) or network
+    net = NETWORKS[detected_network]
     result = ParsedTransaction(raw_psbt=psbt)
 
     # Collect all master fingerprints from inputs (to identify change outputs)
@@ -105,9 +108,6 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
     # Signing status
     result.status, result.signers, required_sigs, total_sigs = _analyze_signing_status(psbt)
 
-    # Auto-detect network from derivation paths (coin_type 1 = testnet)
-    detected_network = _detect_network(psbt)
-
     out = {
         "inputs": result.inputs,
         "outputs": result.outputs,
@@ -122,11 +122,11 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
     return out
 
 
-def _detect_network(psbt: PSBT) -> str:
+def _detect_network(psbt: PSBT):
     """Detect network from BIP32 derivation paths in the PSBT.
 
     Coin type 1 (hardened) in the second path element means testnet.
-    Coin type 0 means mainnet. Defaults to "main" if undetermined.
+    Coin type 0 means mainnet. Returns None if undetermined.
     """
     HARDENED = 0x80000000
     for inp_scope in psbt.inputs:
@@ -146,7 +146,7 @@ def _detect_network(psbt: PSBT) -> str:
                     return "test"
                 elif coin_type == 0:
                     return "main"
-    return "main"
+    return None
 
 
 def _is_change_output(out_scope, input_fingerprints: set) -> bool:

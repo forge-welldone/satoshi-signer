@@ -157,3 +157,37 @@ class TestParseOpReturnPsbt:
         result = parse_psbt(psbt_bytes)
         change_out = result["outputs"][1]
         assert "op_return" not in change_out
+
+
+SINGLESIG_TESTNET_PATH = os.path.join(PSBTS_DIR, "singlesig_testnet3.psbt")
+
+
+@pytest.mark.skipif(
+    not os.path.exists(SINGLESIG_TESTNET_PATH),
+    reason="Singlesig testnet PSBT fixture not present",
+)
+class TestParseTestnetPsbt:
+    """Tests for testnet PSBT address encoding."""
+
+    @pytest.fixture
+    def psbt_bytes(self):
+        with open(SINGLESIG_TESTNET_PATH, "rb") as f:
+            return f.read()
+
+    def test_detects_testnet(self, psbt_bytes):
+        result = parse_psbt(psbt_bytes)
+        assert result["network"] == "test"
+
+    def test_addresses_use_testnet_prefix(self, psbt_bytes):
+        """Bug regression: testnet PSBTs must show tb1 addresses, not bc1."""
+        result = parse_psbt(psbt_bytes)
+        for inp in result["inputs"]:
+            if inp["address"] != "unknown":
+                assert inp["address"].startswith("tb1"), (
+                    f"Input address {inp['address']} should start with tb1"
+                )
+        for out in result["outputs"]:
+            if out["address"] != "unknown":
+                assert out["address"].startswith("tb1"), (
+                    f"Output address {out['address']} should start with tb1"
+                )
