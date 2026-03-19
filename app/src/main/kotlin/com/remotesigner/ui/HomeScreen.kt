@@ -41,6 +41,7 @@ fun HomeScreen(
     onDeleteInboxItem: (InboxItemEntity) -> Unit,
     onItemTap: (InboxItemEntity) -> Unit = {},
     onContacts: () -> Unit = {},
+    onEncryptPassphrase: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
@@ -105,6 +106,13 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Contacts")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onEncryptPassphrase,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Encrypt Passphrase for NFC")
             }
 
             Spacer(modifier = Modifier.height(16.dp))

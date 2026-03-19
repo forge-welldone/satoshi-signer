@@ -70,6 +70,7 @@ fun AppRoot(
             onDeleteInboxItem = { item -> viewModel.deleteInboxItem(item.id) },
             onItemTap = { item -> viewModel.openInboxResult(item) },
             onContacts = { viewModel.showContacts() },
+            onEncryptPassphrase = { viewModel.showEncryptPassphrase() },
         )
         is AppState.TransactionReview -> TransactionReviewScreen(
             state = s,
