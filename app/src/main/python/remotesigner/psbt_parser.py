@@ -8,6 +8,7 @@ if sys.version_info >= (3, 11):
     from typing import NotRequired, TypedDict
 else:
     from typing_extensions import NotRequired, TypedDict
+from remotesigner.script_utils import parse_multisig_script
 
 
 class InputInfo(TypedDict):
@@ -208,28 +209,6 @@ def _is_change_output(out_scope, input_fingerprints: set) -> bool:
     return False
 
 
-def _parse_multisig_info(script_bytes: bytes) -> tuple:
-    """Extract m and n from a multisig script.
-
-    Returns (m, n) or (None, None) if not a recognizable multisig script.
-    """
-    if len(script_bytes) < 37:
-        return None, None
-    if script_bytes[-1] != 0xAE:  # OP_CHECKMULTISIG
-        return None, None
-
-    m_byte = script_bytes[0]
-    if not (0x51 <= m_byte <= 0x60):
-        return None, None
-    m = m_byte - 0x50
-
-    n_byte = script_bytes[-2]
-    if not (0x51 <= n_byte <= 0x60):
-        return None, None
-    n = n_byte - 0x50
-
-    return m, n
-
 
 def _analyze_signing_status(psbt: PSBT) -> tuple:
     """Determine signing status and list signers.
@@ -251,10 +230,10 @@ def _analyze_signing_status(psbt: PSBT) -> tuple:
         # Extract m-of-n from multisig scripts
         ms = inp_scope.witness_script or inp_scope.redeem_script
         if ms is not None:
-            m, n = _parse_multisig_info(ms.data)
-            if m is not None:
-                required_sigs = max(required_sigs, m)
-                total_sigs = max(total_sigs, n)
+            info = parse_multisig_script(ms.data)
+            if info is not None:
+                required_sigs = max(required_sigs, info.m)
+                total_sigs = max(total_sigs, info.n)
 
         for pub, deriv in inp_scope.bip32_derivations.items():
             # fingerprint is bytes; convert to hex for display
