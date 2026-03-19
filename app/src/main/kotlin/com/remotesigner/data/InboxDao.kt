@@ -35,8 +35,8 @@ interface InboxDao {
     @Query("UPDATE inbox_items SET status = :status, rawHex = :rawHex, network = :network WHERE id = :id")
     suspend fun updateSigned(id: String, status: InboxStatus, rawHex: String, network: String)
 
-    @Query("UPDATE inbox_items SET status = :status, txid = :txid WHERE id = :id")
-    suspend fun updateBroadcast(id: String, status: InboxStatus, txid: String)
+    @Query("UPDATE inbox_items SET status = :status, txid = :txid, network = :network WHERE id = :id")
+    suspend fun updateBroadcast(id: String, status: InboxStatus, txid: String, network: String)
 
     @Query("DELETE FROM inbox_items WHERE id = :id")
     suspend fun delete(id: String)

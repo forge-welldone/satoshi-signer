@@ -95,7 +95,7 @@ fun AppRoot(
         )
         is AppState.Result -> ResultScreen(
             state = s,
-            onBroadcast = { viewModel.broadcast() },
+            onBroadcast = { network -> viewModel.broadcast(network) },
             onExportPsbt = { psbt ->
                 val file = File(context.cacheDir, "signed.psbt")
                 file.writeBytes(psbt)

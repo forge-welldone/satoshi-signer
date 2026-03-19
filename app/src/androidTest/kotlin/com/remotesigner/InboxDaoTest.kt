@@ -119,10 +119,11 @@ class InboxDaoTest {
     @Test
     fun updateBroadcast_setsStatusAndTxid() = runTest {
         dao.upsert(makeItem(status = InboxStatus.SIGNED, rawHex = "deadbeef"))
-        dao.updateBroadcast("event1", InboxStatus.BROADCAST, "abc123")
+        dao.updateBroadcast("event1", InboxStatus.BROADCAST, "abc123", "testnet4")
         val items = dao.getAll().first()
         assertEquals(InboxStatus.BROADCAST, items[0].status)
         assertEquals("abc123", items[0].txid)
+        assertEquals("testnet4", items[0].network)
         assertEquals("deadbeef", items[0].rawHex) // rawHex preserved
     }
 

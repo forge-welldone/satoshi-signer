@@ -520,7 +520,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun broadcast() {
+    fun broadcast(targetNetwork: String) {
         val state = _state.value
         if (state !is AppState.Result || state.rawHex == null) return
 
@@ -528,7 +528,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                pythonBridge.broadcast(state.rawHex, state.network)
+                pythonBridge.broadcast(state.rawHex, targetNetwork)
             }
 
             if (result["status"] == "ok") {
@@ -536,10 +536,11 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 _state.value = state.copy(
                     txid = txid,
                     broadcastStatus = "Broadcast successful",
+                    network = targetNetwork,
                 )
                 val inboxId = currentSigningInboxId
                 if (inboxId != null && txid != null) {
-                    inboxDao.updateBroadcast(inboxId, InboxStatus.BROADCAST, txid)
+                    inboxDao.updateBroadcast(inboxId, InboxStatus.BROADCAST, txid, targetNetwork)
                 }
             } else {
                 _state.value = state.copy(

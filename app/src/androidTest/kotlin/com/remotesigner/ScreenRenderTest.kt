@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.ui.EncryptPassphraseScreen
+import com.remotesigner.viewmodel.AppState
 import com.remotesigner.ui.ErrorScreen
 import com.remotesigner.ui.ResultScreen
 import com.remotesigner.ui.SigningScreen
@@ -475,5 +476,46 @@ class ScreenRenderTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("fakeCipherText?iv=fakeIv").assertIsDisplayed()
         composeTestRule.onNodeWithText("Copy to Clipboard").assertIsDisplayed()
+    }
+
+    @Test
+    fun resultScreen_testnet_showsThreeBroadcastButtons() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                ResultScreen(
+                    state = TestFixtures.resultCompleteTestnet,
+                    onBroadcast = {},
+                    onExportPsbt = {},
+                    onSavePsbt = {},
+                    onHome = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Broadcast to Testnet4").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Broadcast to Testnet3").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Broadcast to Signet").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Broadcast Transaction").assertDoesNotExist()
+    }
+
+    @Test
+    fun resultScreen_mainnet_showsSingleBroadcastButton() {
+        val mainnetResult = AppState.Result(
+            isComplete = true,
+            rawHex = "0200000001deadbeef",
+            network = "main",
+        )
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                ResultScreen(
+                    state = mainnetResult,
+                    onBroadcast = {},
+                    onExportPsbt = {},
+                    onSavePsbt = {},
+                    onHome = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Broadcast Transaction").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Broadcast to Testnet4").assertDoesNotExist()
     }
 }

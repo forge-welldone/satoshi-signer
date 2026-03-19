@@ -23,7 +23,7 @@ import com.remotesigner.viewmodel.AppState
 @Composable
 fun ResultScreen(
     state: AppState.Result,
-    onBroadcast: () -> Unit,
+    onBroadcast: (String) -> Unit,
     onExportPsbt: (ByteArray) -> Unit,
     onSavePsbt: (ByteArray) -> Unit,
     onHome: () -> Unit,
@@ -72,15 +72,51 @@ fun ResultScreen(
                         Text(it)
                         Spacer(modifier = Modifier.height(8.dp))
                     }
-                    Button(
-                        onClick = {
-                            broadcastClicked = true
-                            onBroadcast()
-                        },
-                        enabled = !broadcastClicked || state.broadcastStatus?.contains("failed") == true,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Broadcast Transaction")
+                    val isTestnet = state.network == "test"
+                    if (isTestnet) {
+                        Button(
+                            onClick = {
+                                broadcastClicked = true
+                                onBroadcast("testnet4")
+                            },
+                            enabled = !broadcastClicked || state.broadcastStatus?.contains("failed") == true,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Broadcast to Testnet4")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                broadcastClicked = true
+                                onBroadcast("testnet3")
+                            },
+                            enabled = !broadcastClicked || state.broadcastStatus?.contains("failed") == true,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Broadcast to Testnet3")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                broadcastClicked = true
+                                onBroadcast("signet")
+                            },
+                            enabled = !broadcastClicked || state.broadcastStatus?.contains("failed") == true,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Broadcast to Signet")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                broadcastClicked = true
+                                onBroadcast(state.network)
+                            },
+                            enabled = !broadcastClicked || state.broadcastStatus?.contains("failed") == true,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Broadcast Transaction")
+                        }
                     }
                 }
 

@@ -86,6 +86,12 @@ object TestFixtures {
         updatedPsbt = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
     )
 
+    val resultCompleteTestnet = AppState.Result(
+        isComplete = true,
+        rawHex = "0200000001deadbeef",
+        network = "test",
+    )
+
     val errorState = AppState.Error(message = "USB device not found")
 
     val noOpCallback = SigningCallbackImpl(
