@@ -40,6 +40,19 @@ def broadcast_transaction(raw_hex: str, network: str = "main") -> dict:
             f"Unknown network: {network!r}. "
             f"Valid: {', '.join(sorted(ENDPOINTS))}"
         )
+    if not raw_hex or not isinstance(raw_hex, str):
+        raise ValueError("raw_hex must be a non-empty string")
+    if len(raw_hex) % 2 != 0:
+        raise ValueError("raw_hex has odd length — not valid hex")
+    try:
+        bytes.fromhex(raw_hex)
+    except ValueError:
+        raise ValueError("raw_hex contains non-hex characters")
+    MAX_TX_SIZE = 400_000  # 400KB, Bitcoin's max standard tx is ~400KB
+    if len(raw_hex) // 2 > MAX_TX_SIZE:
+        raise ValueError(
+            f"Transaction too large: {len(raw_hex) // 2} bytes (max {MAX_TX_SIZE})"
+        )
     endpoints = ENDPOINTS[network]
     last_error = ""
 

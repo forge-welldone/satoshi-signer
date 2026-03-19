@@ -73,3 +73,24 @@ class TestBroadcaster:
         result = broadcast_transaction("deadbeef", network="test")
         assert result["status"] == "ok"
         assert "testnet" in mock_post.call_args[0][0]
+
+    def test_rejects_empty_hex(self):
+        with pytest.raises(ValueError, match="non-empty string"):
+            broadcast_transaction("", network="main")
+
+    def test_rejects_none_hex(self):
+        with pytest.raises(ValueError, match="non-empty string"):
+            broadcast_transaction(None, network="main")
+
+    def test_rejects_odd_length_hex(self):
+        with pytest.raises(ValueError, match="odd length"):
+            broadcast_transaction("abc", network="main")
+
+    def test_rejects_non_hex_characters(self):
+        with pytest.raises(ValueError, match="non-hex"):
+            broadcast_transaction("xyz123", network="main")
+
+    def test_rejects_oversized_transaction(self):
+        huge_hex = "ab" * 400_001  # 400,001 bytes
+        with pytest.raises(ValueError, match="too large"):
+            broadcast_transaction(huge_hex, network="main")
