@@ -43,6 +43,26 @@ object Nip04 {
         return String(cipher.doFinal(ciphertext), Charsets.UTF_8)
     }
 
+    /**
+     * Encrypt a plaintext string using NIP-04 (AES-256-CBC).
+     *
+     * @param privkey Our 32-byte secret key
+     * @param recipientXOnlyPubkey Recipient's 32-byte x-only public key
+     * @param plaintext The string to encrypt
+     * @return NIP-04 format: "base64(ciphertext)?iv=base64(iv)"
+     */
+    fun encrypt(privkey: ByteArray, recipientXOnlyPubkey: ByteArray, plaintext: String): String {
+        val sharedSecret = computeSharedSecret(privkey, recipientXOnlyPubkey)
+        val iv = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(sharedSecret, "AES"), IvParameterSpec(iv))
+        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+
+        return Base64.encodeToString(ciphertext, Base64.NO_WRAP) +
+            "?iv=" + Base64.encodeToString(iv, Base64.NO_WRAP)
+    }
+
     fun computeSharedSecret(privkey: ByteArray, xOnlyPubkey: ByteArray): ByteArray {
         // NIP-04: shared secret is the raw x-coordinate of privkey * pubkey.
         // We use pubKeyTweakMul (point multiplication) instead of ecdh() because
