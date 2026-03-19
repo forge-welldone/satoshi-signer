@@ -164,16 +164,18 @@
 
 ---
 
-### 10. Deduplicate multisig script parsing
+### ~~10. Deduplicate multisig script parsing~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `psbt_parser.py:174-194` and `signer.py:159-238` |
 | **Consensus** | Python Engineer |
 | **Test impact** | 🧪 Single function easier to test exhaustively |
 
-`_parse_multisig_info` in parser and `_parse_multisig_script` in signer both parse OP_CHECKMULTISIG scripts. Different scope but same core byte parsing.
+~~`_parse_multisig_info` in parser and `_parse_multisig_script` in signer both parse OP_CHECKMULTISIG scripts. Different scope but same core byte parsing.~~
 
-**Fix:** Extract shared m/n/pubkeys parsing into `remotesigner/script_utils.py`.
+~~**Fix:** Extract shared m/n/pubkeys parsing into `remotesigner/script_utils.py`.~~
+
+**Fixed:** Extracted `parse_multisig_script()` and `MultisigInfo` dataclass into `remotesigner/script_utils.py`. `psbt_parser.py` and `signer.py` both delegate byte parsing to the shared function. 11 direct unit tests added in `test_script_utils.py`.
 
 ---
 
