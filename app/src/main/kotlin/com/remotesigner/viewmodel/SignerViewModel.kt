@@ -78,6 +78,7 @@ sealed class AppState {
     ) : AppState()
     data class Error(val message: String) : AppState()
     data object Contacts : AppState()
+    data object EncryptPassphrase : AppState()
 }
 
 data class PassphraseRequest(
@@ -560,6 +561,15 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun showContacts() {
         _state.value = AppState.Contacts
+    }
+
+    fun showEncryptPassphrase() {
+        _state.value = AppState.EncryptPassphrase
+    }
+
+    fun encryptForNfc(plaintext: String): String {
+        val (privkey, pubkey) = keyManager.getOrCreateKeyPair()
+        return com.remotesigner.nostr.Nip04.encrypt(privkey, pubkey, plaintext)
     }
 
     fun saveContact(label: String, fingerprint: String, existingContactId: Long?) {

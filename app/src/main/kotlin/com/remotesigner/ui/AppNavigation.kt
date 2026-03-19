@@ -127,5 +127,11 @@ fun AppRoot(
             onDeleteContact = { id -> viewModel.deleteContact(id) },
             onDeleteFingerprint = { id -> viewModel.deleteFingerprint(id) },
         )
+        is AppState.EncryptPassphrase -> {
+            // Placeholder until EncryptPassphraseScreen is created
+            androidx.compose.material3.Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                androidx.compose.material3.Text("Encrypt Passphrase — coming soon")
+            }
+        }
     }
 }
