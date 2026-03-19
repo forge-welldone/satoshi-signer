@@ -13,7 +13,7 @@
 - **Three extracted classes:** `ContactRepository`, `InboxRepository`, `SigningOrchestrator`. NFC state (~30 lines) and PSBT parsing (~70 lines) stay in the ViewModel — they're small and tightly coupled to state transitions.
 - **One interface:** `PythonBridgeInterface` — the only dependency that's truly untestable without the runtime (Chaquopy). Everything else uses concrete classes with constructor injection.
 - **Manual `ViewModelProvider.Factory`:** No DI framework. A simple factory class creates the ViewModel with its dependencies.
-- **Bottom-up extraction order:** `ContactRepository` → `InboxRepository` → `PythonBridgeInterface` → `SigningOrchestrator` → `ViewModelFactory`.
+- **Bottom-up extraction order:** `ContactRepository` → `PythonBridgeInterface` → `InboxRepository` → `SigningOrchestrator` → `ViewModelFactory`. (PythonBridgeInterface must precede InboxRepository because InboxRepository takes it as a constructor parameter.)
 
 ## Architecture
 
@@ -260,8 +260,8 @@ Each extracted class is also independently testable:
 ## Execution Order
 
 1. `ContactRepository` — extract, update ViewModel to delegate, verify existing tests pass
-2. `InboxRepository` — extract, update ViewModel to delegate, verify existing tests pass
-3. `PythonBridgeInterface` — extract interface, make `PythonBridge` implement it
+2. `PythonBridgeInterface` — extract interface and top-level `SigningCallback`, make `PythonBridge` implement it
+3. `InboxRepository` — extract, update ViewModel to delegate, verify existing tests pass
 4. `SigningOrchestrator` — extract, update ViewModel to delegate, verify existing tests pass
 5. `SignerViewModelFactory` — add factory, update Activity, verify app launches
 6. Update existing tests — `ChaquopyE2ETest` currently calls `SignerViewModel(app)` directly. Must change to `SignerViewModelFactory(app).create(SignerViewModel::class.java)` since the constructor now takes 7 parameters. The `signWithBridge()` test-visible method still works. Import paths for `SigningCallback` change from `PythonBridge.SigningCallback` to `SigningCallback` in `SigningCallbackImpl` and any test files.
