@@ -11,6 +11,9 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
@@ -36,6 +39,7 @@ import com.remotesigner.viewmodel.AccountPathRequest
 import com.remotesigner.viewmodel.PassphraseRequest
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SigningScreen(
     message: String,
@@ -65,32 +69,25 @@ fun SigningScreen(
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
-        // Show passphrase dialog when Trezor requests it
-        if (passphraseRequest != null) {
-            PassphraseDialog(
-                request = passphraseRequest,
-                onDismiss = { passphraseRequest.callback.cancel() },
-                nfcAvailable = nfcAvailable,
-                nfcTagResult = nfcTagResult,
-                onStartNfcWaiting = onStartNfcWaiting,
-                onStopNfcWaiting = onStopNfcWaiting,
-                onClearNfcResult = onClearNfcResult,
+    BackHandler(onBack = onCancel)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Signing") },
+                navigationIcon = {
+                    IconButton(onClick = onCancel) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
             )
         }
-
-        // Show account path dialog when auto-detection fails
-        if (accountPathRequest != null) {
-            AccountPathDialog(
-                request = accountPathRequest,
-                onDismiss = { accountPathRequest.callback.cancel() },
-            )
-        }
-
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(padding)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -135,6 +132,27 @@ fun SigningScreen(
             }
             Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    // Show passphrase dialog when Trezor requests it
+    if (passphraseRequest != null) {
+        PassphraseDialog(
+            request = passphraseRequest,
+            onDismiss = { passphraseRequest.callback.cancel() },
+            nfcAvailable = nfcAvailable,
+            nfcTagResult = nfcTagResult,
+            onStartNfcWaiting = onStartNfcWaiting,
+            onStopNfcWaiting = onStopNfcWaiting,
+            onClearNfcResult = onClearNfcResult,
+        )
+    }
+
+    // Show account path dialog when auto-detection fails
+    if (accountPathRequest != null) {
+        AccountPathDialog(
+            request = accountPathRequest,
+            onDismiss = { accountPathRequest.callback.cancel() },
+        )
     }
 }
 
