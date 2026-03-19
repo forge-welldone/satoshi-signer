@@ -2,10 +2,13 @@ package com.remotesigner.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +23,7 @@ import com.remotesigner.viewmodel.SignerInfo
 import com.remotesigner.viewmodel.TxInput
 import com.remotesigner.viewmodel.TxOutput
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionReviewScreen(
     state: AppState.TransactionReview,
@@ -30,16 +34,27 @@ fun TransactionReviewScreen(
 ) {
     var showAddDialog by remember { mutableStateOf<SignerInfo?>(null) }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    BackHandler(onBack = onCancel)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Transaction Details") },
+                navigationIcon = {
+                    IconButton(onClick = onCancel) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(padding)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Text("Transaction Details", style = MaterialTheme.typography.headlineMedium)
-            Spacer(modifier = Modifier.height(16.dp))
-
             if (!state.description.isNullOrBlank()) {
                 Text(
                     state.description,
@@ -133,20 +148,16 @@ fun TransactionReviewScreen(
             Button(onClick = onSign, modifier = Modifier.fillMaxWidth()) {
                 Text("Sign with Trezor")
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-                Text("Cancel")
-            }
         }
+    }
 
-        showAddDialog?.let { signer ->
-            QuickAddContactDialog(
-                signer = signer,
-                existingContacts = contacts,
-                onDismiss = { showAddDialog = null },
-                onSave = onSaveContact,
-            )
-        }
+    showAddDialog?.let { signer ->
+        QuickAddContactDialog(
+            signer = signer,
+            existingContacts = contacts,
+            onDismiss = { showAddDialog = null },
+            onSave = onSaveContact,
+        )
     }
 }
 
