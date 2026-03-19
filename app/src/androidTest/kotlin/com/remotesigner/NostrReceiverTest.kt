@@ -179,6 +179,24 @@ class NostrReceiverTest {
     }
 
     @Test
+    fun fromRelayMessage_rejectsEvent_whenVerifyIdThrows() {
+        // Event with all required fields for parsing but missing "tags".
+        // verifyId() will throw on getJSONArray("tags") and should reject.
+        val event = JSONObject().apply {
+            put("id", "a".repeat(64))
+            put("pubkey", "b".repeat(64))
+            put("created_at", 1234567890L)
+            put("kind", 4)
+            put("content", "test content")
+            // No "tags" — causes verifyId to throw
+        }
+        val relayMessage = """["EVENT","sub",${event}]"""
+
+        val parsed = NostrEvent.fromRelayMessage(relayMessage)
+        assertNull("Event with unverifiable ID should be rejected", parsed)
+    }
+
+    @Test
     fun receiver_parsesEventWithSlashesInContent() {
         val received = CopyOnWriteArrayList<InboxItemEntity>()
         val latch = CountDownLatch(1)

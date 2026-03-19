@@ -34,16 +34,18 @@
 
 ---
 
-### 2. NostrEvent.verifyId accepts events when verification throws
+### ~~2. NostrEvent.verifyId accepts events when verification throws~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `nostr/NostrEvent.kt:67-69` |
 | **Consensus** | System Architect, Android Engineer, Rubyist (3/4) |
 | **Impact** | Malformed events bypass integrity check; attacker can craft events that throw |
 
-The catch block returns `true`, meaning any exception during SHA-256 verification causes the event to be accepted. For an app processing financial data (PSBTs), unverifiable events should be rejected.
+~~The catch block returns `true`, meaning any exception during SHA-256 verification causes the event to be accepted. For an app processing financial data (PSBTs), unverifiable events should be rejected.~~
 
-**Fix:** Return `false` in the catch block.
+~~**Fix:** Return `false` in the catch block.~~
+
+**Fixed:** Catch block now returns `false`, rejecting events when ID verification throws. Test added in `NostrReceiverTest`.
 
 ---
 

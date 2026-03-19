@@ -65,8 +65,8 @@ data class NostrEvent(
                 .digest(canonical.toByteArray(Charsets.UTF_8))
             hash.toHex() == id
         } catch (_: Exception) {
-            Log.w("NostrEvent", "ID verification failed for event $id, accepting anyway")
-            true // Accept event if verification can't be performed
+            Log.w("NostrEvent", "ID verification failed for event $id, rejecting")
+            false
         }
     }
 }
