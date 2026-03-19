@@ -19,9 +19,9 @@ class PythonBridge : PythonBridgeInterface {
     private val broadcasterModule: PyObject = py.getModule("remotesigner.broadcaster")
     private val jsonModule: PyObject = py.getModule("json")
 
-    override fun parsePsbt(psbtBytes: ByteArray): Map<String, Any?> {
+    override fun parsePsbt(psbtBytes: ByteArray): ParsedPsbtResult {
         val result = parserModule.callAttr("parse_psbt", psbtBytes)
-        return pyDictToMap(result)
+        return toParseResult(pyDictToMap(result))
     }
 
     override fun signPsbt(
@@ -39,6 +39,40 @@ class PythonBridge : PythonBridgeInterface {
     override fun broadcast(rawHex: String, network: String): Map<String, Any?> {
         val result = broadcasterModule.callAttr("broadcast_transaction", rawHex, network)
         return pyDictToMap(result)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun toParseResult(map: Map<String, Any?>): ParsedPsbtResult {
+        val inputs = (map["inputs"] as? List<Map<String, Any?>> ?: emptyList()).map { inp ->
+            TxInput(
+                address = inp["address"]?.toString() ?: "unknown",
+                amount = (inp["amount"] as? Number)?.toLong() ?: 0,
+            )
+        }
+        val outputs = (map["outputs"] as? List<Map<String, Any?>> ?: emptyList()).map { out ->
+            TxOutput(
+                address = out["address"]?.toString() ?: "unknown",
+                amount = (out["amount"] as? Number)?.toLong() ?: 0,
+                isChange = out["is_change"] as? Boolean ?: false,
+                opReturn = out["op_return"]?.toString(),
+            )
+        }
+        val signers = (map["signers"] as? List<Map<String, Any?>> ?: emptyList()).map { s ->
+            SignerInfo(
+                fingerprint = s["fingerprint"]?.toString() ?: "",
+                signed = s["signed"] as? Boolean ?: false,
+            )
+        }
+        return ParsedPsbtResult(
+            inputs = inputs,
+            outputs = outputs,
+            fee = (map["fee"] as? Number)?.toLong() ?: 0,
+            status = map["status"]?.toString() ?: "unknown",
+            signers = signers,
+            network = map["network"]?.toString() ?: "main",
+            requiredSigs = (map["required_sigs"] as? Number)?.toInt() ?: 0,
+            totalSigs = (map["total_sigs"] as? Number)?.toInt() ?: 0,
+        )
     }
 
     /**

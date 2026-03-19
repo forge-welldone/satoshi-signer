@@ -12,7 +12,7 @@ interface SigningCallback {
 }
 
 interface PythonBridgeInterface {
-    fun parsePsbt(psbtBytes: ByteArray): Map<String, Any?>
+    fun parsePsbt(psbtBytes: ByteArray): ParsedPsbtResult
     fun signPsbt(
         psbtBytes: ByteArray,
         bridge: SigningBridge,

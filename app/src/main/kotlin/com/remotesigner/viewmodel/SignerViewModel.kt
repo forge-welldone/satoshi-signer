@@ -207,58 +207,32 @@ class SignerViewModel(
         viewModelScope.launch { parsePsbt(bytes) }
     }
 
-    @Suppress("UNCHECKED_CAST")
     private suspend fun parsePsbt(bytes: ByteArray) {
         try {
             val result = withContext(Dispatchers.IO) {
                 pythonBridge.parsePsbt(bytes)
             }
             currentPsbtBytes = bytes
-            currentNetwork = result["network"]?.toString() ?: "main"
+            currentNetwork = result.network
 
-            val inputs = (result["inputs"] as? List<Map<String, Any?>>)?.map { inp ->
-                TxInput(
-                    address = inp["address"]?.toString() ?: "unknown",
-                    amount = (inp["amount"] as? Number)?.toLong() ?: 0,
-                )
-            } ?: emptyList()
-
-            val outputs = (result["outputs"] as? List<Map<String, Any?>>)?.map { out ->
-                TxOutput(
-                    address = out["address"]?.toString() ?: "unknown",
-                    amount = (out["amount"] as? Number)?.toLong() ?: 0,
-                    isChange = out["is_change"] as? Boolean ?: false,
-                    opReturn = out["op_return"]?.toString(),
-                )
-            } ?: emptyList()
-
-            val fee = (result["fee"] as? Number)?.toLong() ?: 0
-            val totalSent = outputs.filter { !it.isChange }.sumOf { it.amount }
-
-            val rawSigners = (result["signers"] as? List<Map<String, Any?>>)?.map { s ->
-                SignerInfo(
-                    fingerprint = s["fingerprint"]?.toString() ?: "",
-                    signed = s["signed"] as? Boolean ?: false,
-                )
-            } ?: emptyList()
-
-            val signers = contactRepository.enrichSigners(rawSigners)
+            val totalSent = result.outputs.filter { !it.isChange }.sumOf { it.amount }
+            val signers = contactRepository.enrichSigners(result.signers)
 
             val warnings = mutableListOf<String>()
-            if (fee > 1_000_000) {
-                warnings.add("Fee is unusually high: ${"%.8f".format(fee / 100_000_000.0)} BTC")
+            if (result.fee > 1_000_000) {
+                warnings.add("Fee is unusually high: ${"%.8f".format(result.fee / 100_000_000.0)} BTC")
             }
 
             _state.value = AppState.TransactionReview(
-                inputs = inputs,
-                outputs = outputs,
-                fee = fee,
+                inputs = result.inputs,
+                outputs = result.outputs,
+                fee = result.fee,
                 totalSent = totalSent,
-                status = result["status"]?.toString() ?: "unknown",
+                status = result.status,
                 signers = signers,
                 warnings = warnings,
-                requiredSigs = (result["required_sigs"] as? Number)?.toInt() ?: 0,
-                totalSigs = (result["total_sigs"] as? Number)?.toInt() ?: 0,
+                requiredSigs = result.requiredSigs,
+                totalSigs = result.totalSigs,
                 network = currentNetwork,
                 description = currentDescription,
             )

@@ -23,7 +23,6 @@ class InboxRepository(
         return inboxDao.getAllOnce().map { it.id }.toSet()
     }
 
-    @Suppress("UNCHECKED_CAST")
     suspend fun handleInboxEvent(item: InboxItemEntity) {
         val inserted = inboxDao.insertIgnore(item)
         if (inserted == -1L) return
@@ -32,15 +31,13 @@ class InboxRepository(
             val result = withContext(Dispatchers.IO) {
                 pythonBridge.parsePsbt(item.psbtBytes)
             }
-            val outputs = result["outputs"] as? List<Map<String, Any?>> ?: emptyList()
-            val totalSent = outputs
-                .filter { it["is_change"] as? Boolean != true }
-                .sumOf { (it["amount"] as? Number)?.toLong() ?: 0L }
-            val network = result["network"]?.toString() ?: "main"
+            val totalSent = result.outputs
+                .filter { !it.isChange }
+                .sumOf { it.amount }
             inboxDao.updateParsedFields(
                 id = item.id,
                 amount = formatBtcAmount(totalSent),
-                network = network,
+                network = result.network,
             )
         } catch (_: Exception) {
             // Keep original row if parse fails

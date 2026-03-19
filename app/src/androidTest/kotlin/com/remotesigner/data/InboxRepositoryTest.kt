@@ -2,8 +2,10 @@ package com.remotesigner.data
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.remotesigner.bridge.ParsedPsbtResult
 import com.remotesigner.bridge.PythonBridgeInterface
 import com.remotesigner.bridge.SigningCallback
+import com.remotesigner.bridge.TxOutput
 import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.InboxStatus
 import com.remotesigner.nostr.formatBtcAmount
@@ -20,13 +22,17 @@ class InboxRepositoryTest {
     private lateinit var repo: InboxRepository
 
     private class FakePythonBridge(
-        private val parseResult: Map<String, Any?> = mapOf(
-            "outputs" to listOf(mapOf("amount" to 50000L, "is_change" to false)),
-            "network" to "test",
+        private val parseResult: ParsedPsbtResult = ParsedPsbtResult(
+            inputs = emptyList(),
+            outputs = listOf(TxOutput(address = "test", amount = 50000L, isChange = false)),
+            fee = 0,
+            status = "unsigned",
+            signers = emptyList(),
+            network = "test",
         ),
         private val shouldThrow: Boolean = false,
     ) : PythonBridgeInterface {
-        override fun parsePsbt(psbtBytes: ByteArray): Map<String, Any?> {
+        override fun parsePsbt(psbtBytes: ByteArray): ParsedPsbtResult {
             if (shouldThrow) throw RuntimeException("parse failed")
             return parseResult
         }
