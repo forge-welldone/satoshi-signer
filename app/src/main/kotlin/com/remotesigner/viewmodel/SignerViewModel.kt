@@ -334,23 +334,29 @@ class SignerViewModel(
         _state.value = state.copy(broadcastStatus = "Broadcasting...")
 
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                pythonBridge.broadcast(state.rawHex, targetNetwork)
-            }
-
-            if (result.status == "ok") {
-                _state.value = state.copy(
-                    txid = result.txid,
-                    broadcastStatus = "Broadcast successful",
-                    network = targetNetwork,
-                )
-                val inboxId = currentSigningInboxId
-                if (inboxId != null && result.txid != null) {
-                    inboxRepository.updateBroadcast(inboxId, InboxStatus.BROADCAST, result.txid, targetNetwork)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    pythonBridge.broadcast(state.rawHex, targetNetwork)
                 }
-            } else {
+
+                if (result.status == "ok") {
+                    _state.value = state.copy(
+                        txid = result.txid,
+                        broadcastStatus = "Broadcast successful",
+                        network = targetNetwork,
+                    )
+                    val inboxId = currentSigningInboxId
+                    if (inboxId != null && result.txid != null) {
+                        inboxRepository.updateBroadcast(inboxId, InboxStatus.BROADCAST, result.txid, targetNetwork)
+                    }
+                } else {
+                    _state.value = state.copy(
+                        broadcastStatus = "Broadcast failed: ${result.message}",
+                    )
+                }
+            } catch (e: Exception) {
                 _state.value = state.copy(
-                    broadcastStatus = "Broadcast failed: ${result.message}",
+                    broadcastStatus = "Broadcast failed: ${e.message}",
                 )
             }
         }

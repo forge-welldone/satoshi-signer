@@ -132,18 +132,20 @@
 
 ---
 
-### 8. Unify error handling across Python-Kotlin boundary
+### ~~8. Unify error handling across Python-Kotlin boundary~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | Multiple (signer.py, broadcaster.py, psbt_parser.py, PythonBridge.kt) |
 | **Consensus** | System Architect, Rubyist (2/4) |
 
-Three different error patterns:
-- `parse_psbt` raises `ValueError`
-- `sign_psbt` returns `{"status": "error", "message": ...}`
-- `broadcast_transaction` returns `{"status": "error", ...}` but failures become a string field, not Error state
+~~Three different error patterns:~~
+~~- `parse_psbt` raises `ValueError`~~
+~~- `sign_psbt` returns `{"status": "error", "message": ...}`~~
+~~- `broadcast_transaction` returns `{"status": "error", ...}` but failures become a string field, not Error state~~
 
-**Fix:** Establish convention: Python functions either return dict with `"status"` key or raise. Create a Kotlin helper that maps the dict error pattern to `AppState.Error`. Document in CLAUDE.md.
+~~**Fix:** Establish convention: Python functions either return dict with `"status"` key or raise. Create a Kotlin helper that maps the dict error pattern to `AppState.Error`. Document in CLAUDE.md.~~
+
+**Fixed:** Documented two-pattern convention in CLAUDE.md: (1) validation functions raise exceptions, (2) operations with multiple outcomes return status dicts. Fixed bug where `SignerViewModel.broadcast()` didn't catch `ValueError` from Python input validation — added try-catch so invalid input shows a user-facing error instead of crashing. No Kotlin helper needed since typed models (`ParsedPsbtResult`, `BroadcastResult`, `SigningResult`) already handle error mapping at their respective call sites.
 
 ---
 
