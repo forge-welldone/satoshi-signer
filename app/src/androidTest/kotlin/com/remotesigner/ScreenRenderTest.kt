@@ -6,7 +6,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import com.remotesigner.nfc.NfcReadResult
+import com.remotesigner.ui.EncryptPassphraseScreen
 import com.remotesigner.ui.ErrorScreen
 import com.remotesigner.ui.ResultScreen
 import com.remotesigner.ui.SigningScreen
@@ -443,5 +445,39 @@ class ScreenRenderTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("No text found on tag").assertIsDisplayed()
         composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
+    }
+
+    @Test
+    fun encryptPassphraseScreen_rendersInitialState() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                EncryptPassphraseScreen(
+                    onEncrypt = { it },
+                    onBack = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Encrypt Passphrase for NFC").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Encrypt").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Back").assertIsDisplayed()
+    }
+
+    @Test
+    fun encryptPassphraseScreen_showsResultAfterEncrypt() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                EncryptPassphraseScreen(
+                    onEncrypt = { "fakeCipherText?iv=fakeIv" },
+                    onBack = {},
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Passphrase").performClick()
+        composeTestRule.onNodeWithText("Passphrase")
+            .performTextInput("test passphrase")
+        composeTestRule.onNodeWithText("Encrypt").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("fakeCipherText?iv=fakeIv").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Copy to Clipboard").assertIsDisplayed()
     }
 }
