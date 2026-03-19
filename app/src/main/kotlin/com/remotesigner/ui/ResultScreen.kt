@@ -2,11 +2,14 @@ package com.remotesigner.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -16,6 +19,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.remotesigner.viewmodel.AppState
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultScreen(
     state: AppState.Result,
@@ -27,17 +31,28 @@ fun ResultScreen(
     val clipboard = LocalClipboardManager.current
     var broadcastClicked by remember { mutableStateOf(false) }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    BackHandler(onBack = onHome)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (state.isComplete) "Transaction Signed" else "Signature Added") },
+                navigationIcon = {
+                    IconButton(onClick = onHome) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(padding)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
             if (state.isComplete) {
-                Text("Transaction Signed", style = MaterialTheme.typography.headlineMedium)
-                Spacer(modifier = Modifier.height(16.dp))
-
                 if (state.txid != null) {
                     Text("Broadcast successful!")
                     Spacer(modifier = Modifier.height(8.dp))
@@ -81,8 +96,6 @@ fun ResultScreen(
                     }
                 }
             } else {
-                Text("Signature Added", style = MaterialTheme.typography.headlineMedium)
-                Spacer(modifier = Modifier.height(16.dp))
                 Text("The transaction needs more signatures before it can be broadcast.")
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -115,10 +128,6 @@ fun ResultScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-            OutlinedButton(onClick = onHome, modifier = Modifier.fillMaxWidth()) {
-                Text("Back to Home")
-            }
         }
     }
 }
