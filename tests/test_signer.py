@@ -21,6 +21,7 @@ from remotesigner.signer import (
     _parse_account_path,
     _node_fingerprint,
     _find_key_origin,
+    _find_matching_derivation,
     _parse_multisig_script,
     psbt_to_trezor_inputs,
     psbt_to_trezor_outputs,
@@ -550,6 +551,147 @@ class TestParseAccountPath:
 
     def test_whitespace_tolerance(self):
         assert _parse_account_path("  m/84'/0'/0'  ") == [0x80000054, 0x80000000, 0x80000000]
+
+
+# ---------------------------------------------------------------------------
+# Test _find_matching_derivation
+# ---------------------------------------------------------------------------
+
+def _make_mock_scope(bip32_derivations=None, taproot_bip32_derivations=None):
+    """Helper: create a mock PSBT scope with derivation dicts."""
+    scope = MagicMock()
+    scope.bip32_derivations = bip32_derivations or {}
+    scope.taproot_bip32_derivations = taproot_bip32_derivations or {}
+    return scope
+
+
+def _make_deriv(fingerprint, derivation):
+    """Helper: create a mock derivation object."""
+    d = MagicMock()
+    d.fingerprint = fingerprint
+    d.derivation = derivation
+    return d
+
+
+class TestFindMatchingDerivation:
+    """Tests for the extracted _find_matching_derivation helper."""
+
+    def test_matches_master_fp_ecdsa(self):
+        """ECDSA input with matching master_fp returns full derivation path."""
+        master_fp = b"\x34\x42\x19\x3e"
+        deriv = _make_deriv(master_fp, [0x80000054, 0x80000000, 0x80000000, 0, 5])
+        pub = MagicMock()
+        scope = _make_mock_scope(bip32_derivations={pub: deriv})
+
+        result = _find_matching_derivation(scope, master_fp, None, is_taproot=False)
+        assert result == [0x80000054, 0x80000000, 0x80000000, 0, 5]
+
+    def test_matches_master_fp_taproot(self):
+        """Taproot input with matching master_fp returns full derivation path."""
+        master_fp = b"\x34\x42\x19\x3e"
+        deriv = _make_deriv(master_fp, [0x80000056, 0x80000000, 0x80000000, 0, 3])
+        pub = MagicMock()
+        leaf_hashes = []
+        scope = _make_mock_scope(taproot_bip32_derivations={pub: (leaf_hashes, deriv)})
+
+        result = _find_matching_derivation(scope, master_fp, None, is_taproot=True)
+        assert result == [0x80000056, 0x80000000, 0x80000000, 0, 3]
+
+    def test_matches_fp_to_prefix_ecdsa(self):
+        """ECDSA input with fp_to_prefix prepends prefix to relative path."""
+        master_fp = b"\xAA\xBB\xCC\xDD"
+        xpub_fp = b"\xDE\xC1\xA7\xC9"
+        deriv = _make_deriv(xpub_fp, [1, 47])
+        pub = MagicMock()
+        scope = _make_mock_scope(bip32_derivations={pub: deriv})
+
+        prefix = [0x80000054, 0x80000000, 0x80000000]
+        fp_to_prefix = {xpub_fp: prefix}
+
+        result = _find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot=False)
+        assert result == [0x80000054, 0x80000000, 0x80000000, 1, 47]
+
+    def test_matches_fp_to_prefix_taproot(self):
+        """Taproot input with fp_to_prefix prepends prefix to relative path."""
+        master_fp = b"\xAA\xBB\xCC\xDD"
+        xpub_fp = b"\xDE\xC1\xA7\xC9"
+        deriv = _make_deriv(xpub_fp, [0, 12])
+        pub = MagicMock()
+        scope = _make_mock_scope(taproot_bip32_derivations={pub: ([], deriv)})
+
+        prefix = [0x80000056, 0x80000000, 0x80000000]
+        fp_to_prefix = {xpub_fp: prefix}
+
+        result = _find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot=True)
+        assert result == [0x80000056, 0x80000000, 0x80000000, 0, 12]
+
+    def test_fp_to_prefix_takes_priority_over_master_fp(self):
+        """When fingerprint is in both fp_to_prefix and matches master_fp,
+        fp_to_prefix wins (prefix is prepended)."""
+        fp = b"\xDE\xC1\xA7\xC9"
+        deriv = _make_deriv(fp, [1, 47])
+        pub = MagicMock()
+        scope = _make_mock_scope(bip32_derivations={pub: deriv})
+
+        prefix = [0x80000054, 0x80000000, 0x80000000]
+        fp_to_prefix = {fp: prefix}
+
+        result = _find_matching_derivation(scope, fp, fp_to_prefix, is_taproot=False)
+        assert result == prefix + [1, 47]
+
+    def test_no_match_returns_none(self):
+        """Returns None when no derivation matches master_fp or fp_to_prefix."""
+        master_fp = b"\xAA\xBB\xCC\xDD"
+        other_fp = b"\x11\x22\x33\x44"
+        deriv = _make_deriv(other_fp, [0x80000054, 0x80000000, 0x80000000, 0, 0])
+        pub = MagicMock()
+        scope = _make_mock_scope(bip32_derivations={pub: deriv})
+
+        result = _find_matching_derivation(scope, master_fp, None, is_taproot=False)
+        assert result is None
+
+    def test_empty_derivations_returns_none(self):
+        """Returns None when scope has no derivations."""
+        scope = _make_mock_scope()
+
+        result = _find_matching_derivation(scope, b"\xAA\xBB\xCC\xDD", None, is_taproot=False)
+        assert result is None
+
+    def test_empty_fp_to_prefix_falls_through_to_master(self):
+        """Empty fp_to_prefix dict doesn't prevent master_fp match."""
+        master_fp = b"\x34\x42\x19\x3e"
+        deriv = _make_deriv(master_fp, [0x80000054, 0x80000000, 0x80000000, 0, 5])
+        pub = MagicMock()
+        scope = _make_mock_scope(bip32_derivations={pub: deriv})
+
+        result = _find_matching_derivation(scope, master_fp, {}, is_taproot=False)
+        assert result == [0x80000054, 0x80000000, 0x80000000, 0, 5]
+
+    def test_taproot_ignores_ecdsa_derivations(self):
+        """When is_taproot=True, only taproot_bip32_derivations are checked."""
+        master_fp = b"\x34\x42\x19\x3e"
+        deriv = _make_deriv(master_fp, [0x80000054, 0x80000000, 0x80000000, 0, 5])
+        pub = MagicMock()
+        scope = _make_mock_scope(
+            bip32_derivations={pub: deriv},
+            taproot_bip32_derivations={},
+        )
+
+        result = _find_matching_derivation(scope, master_fp, None, is_taproot=True)
+        assert result is None
+
+    def test_ecdsa_ignores_taproot_derivations(self):
+        """When is_taproot=False, only bip32_derivations are checked."""
+        master_fp = b"\x34\x42\x19\x3e"
+        deriv = _make_deriv(master_fp, [0x80000056, 0x80000000, 0x80000000, 0, 3])
+        pub = MagicMock()
+        scope = _make_mock_scope(
+            bip32_derivations={},
+            taproot_bip32_derivations={pub: ([], deriv)},
+        )
+
+        result = _find_matching_derivation(scope, master_fp, None, is_taproot=False)
+        assert result is None
 
 
 class TestFindKeyOrigin:

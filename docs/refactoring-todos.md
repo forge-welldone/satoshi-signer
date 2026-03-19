@@ -179,15 +179,17 @@
 
 ---
 
-### 11. Deduplicate taproot vs. ECDSA derivation matching
+### ~~11. Deduplicate taproot vs. ECDSA derivation matching~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `signer.py` (lines 492-515, 590-629, 389-404) |
 | **Consensus** | Rubyist, Python Engineer (2/4) |
 
-The pattern "if taproot, iterate taproot_bip32_derivations; else iterate bip32_derivations, checking fp_to_prefix then master_fp" appears 3 times with slight variations.
+~~The pattern "if taproot, iterate taproot_bip32_derivations; else iterate bip32_derivations, checking fp_to_prefix then master_fp" appears 3 times with slight variations.~~
 
-**Fix:** Extract `find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot)`.
+~~**Fix:** Extract `find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot)`.~~
+
+**Fixed:** Extracted `_find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot)` which returns the resolved `address_n` or `None`. `psbt_to_trezor_inputs` and `psbt_to_trezor_outputs` both delegate to it. `_find_key_origin` simplified to iterate both derivation types in a single loop. 10 direct unit tests added in `TestFindMatchingDerivation`.
 
 ---
 

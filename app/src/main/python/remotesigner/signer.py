@@ -360,19 +360,17 @@ def _find_key_origin(
     sample_script = None
 
     for inp in psbt.inputs:
-        for pub, deriv in inp.bip32_derivations.items():
+        # Check ECDSA derivations first, then taproot
+        all_derivations = list(inp.bip32_derivations.items()) + [
+            (pub, deriv)
+            for pub, (_, deriv) in inp.taproot_bip32_derivations.items()
+        ]
+        for pub, deriv in all_derivations:
             if _is_relative_path(deriv.derivation):
                 sample_pub = pub
                 sample_deriv = deriv
                 sample_script = inp.utxo.script_pubkey.data if inp.utxo else None
                 break
-        if not sample_pub:
-            for pub, (_, deriv) in inp.taproot_bip32_derivations.items():
-                if _is_relative_path(deriv.derivation):
-                    sample_pub = pub
-                    sample_deriv = deriv
-                    sample_script = inp.utxo.script_pubkey.data if inp.utxo else None
-                    break
         if sample_pub:
             break
 
@@ -409,6 +407,44 @@ def _find_key_origin(
                 continue
 
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Derivation matching helper
+# ---------------------------------------------------------------------------
+
+def _find_matching_derivation(
+    scope,
+    master_fp: bytes,
+    fp_to_prefix: Optional[Dict[bytes, List[int]]],
+    is_taproot: bool,
+) -> Optional[List[int]]:
+    """Find the first derivation in *scope* matching *master_fp* or *fp_to_prefix*.
+
+    Iterates ``taproot_bip32_derivations`` when *is_taproot* is True,
+    otherwise ``bip32_derivations``.  Returns the full ``address_n``
+    (with prefix prepended when the fingerprint is in *fp_to_prefix*),
+    or ``None`` if no match is found.
+    """
+    if is_taproot:
+        derivations = (
+            (pub, deriv)
+            for pub, (leaf_hashes, deriv) in scope.taproot_bip32_derivations.items()
+        )
+    else:
+        derivations = (
+            (pub, deriv)
+            for pub, deriv in scope.bip32_derivations.items()
+        )
+
+    for pub, deriv in derivations:
+        if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
+            prefix = fp_to_prefix[deriv.fingerprint]
+            return prefix + list(deriv.derivation)
+        elif deriv.fingerprint == master_fp:
+            return list(deriv.derivation)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -458,36 +494,14 @@ def psbt_to_trezor_inputs(
         # Check if this is a taproot input
         is_taproot = script_type == InputScriptType.SPENDTAPROOT
 
-        # Find the signing key — match master_fp in bip32_derivations
-        address_n: List[int] = []
-        found_key = False
+        # Find the signing key — match master_fp in derivations
+        matched = _find_matching_derivation(
+            inp_scope, master_fp, fp_to_prefix, is_taproot
+        )
 
-        if is_taproot:
-            # For taproot, check taproot_bip32_derivations
-            for pub, (leaf_hashes, deriv) in inp_scope.taproot_bip32_derivations.items():
-                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
-                    prefix = fp_to_prefix[deriv.fingerprint]
-                    address_n = prefix + list(deriv.derivation)
-                    found_key = True
-                    break
-                elif deriv.fingerprint == master_fp:
-                    address_n = list(deriv.derivation)
-                    found_key = True
-                    break
+        if matched is not None:
+            address_n = matched
         else:
-            # Standard ECDSA — check bip32_derivations
-            for pub, deriv in inp_scope.bip32_derivations.items():
-                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
-                    prefix = fp_to_prefix[deriv.fingerprint]
-                    address_n = prefix + list(deriv.derivation)
-                    found_key = True
-                    break
-                elif deriv.fingerprint == master_fp:
-                    address_n = list(deriv.derivation)
-                    found_key = True
-                    break
-
-        if not found_key:
             # Not our input — use a dummy path so trezorlib doesn't choke,
             # but remember to ignore the signature for this index.
             to_ignore.append(i)
@@ -556,52 +570,27 @@ def psbt_to_trezor_outputs(
         is_taproot = script_pubkey.data[0] == 0x51 if script_pubkey and len(script_pubkey.data) > 0 else False
 
         # Check if this is our change output
-        address_n: List[int] = []
-        found_change = False
-        out_script_type = OutputScriptType.PAYTOADDRESS
+        matched = _find_matching_derivation(
+            out_scope, master_fp, fp_to_prefix, is_taproot
+        )
 
-        if is_taproot:
-            for pub, (leaf_hashes, deriv) in out_scope.taproot_bip32_derivations.items():
-                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
-                    prefix = fp_to_prefix[deriv.fingerprint]
-                    address_n = prefix + list(deriv.derivation)
-                    found_change = True
-                    out_script_type = OutputScriptType.PAYTOTAPROOT
-                    break
-                elif deriv.fingerprint == master_fp:
-                    address_n = list(deriv.derivation)
-                    found_change = True
-                    out_script_type = OutputScriptType.PAYTOTAPROOT
-                    break
+        if matched is not None:
+            address_n = matched
+            if is_taproot:
+                out_script_type = OutputScriptType.PAYTOTAPROOT
+            else:
+                sp_data = script_pubkey.data if script_pubkey else b""
+                redeem_data = (
+                    out_scope.redeem_script.data
+                    if out_scope.redeem_script
+                    else None
+                )
+                ist = detect_script_type(sp_data, redeem_data, None)
+                out_script_type = _input_script_type_to_output(ist)
         else:
-            for pub, deriv in out_scope.bip32_derivations.items():
-                if fp_to_prefix and deriv.fingerprint in fp_to_prefix:
-                    prefix = fp_to_prefix[deriv.fingerprint]
-                    address_n = prefix + list(deriv.derivation)
-                    found_change = True
-                    sp_data = script_pubkey.data if script_pubkey else b""
-                    redeem_data = (
-                        out_scope.redeem_script.data
-                        if out_scope.redeem_script
-                        else None
-                    )
-                    ist = detect_script_type(sp_data, redeem_data, None)
-                    out_script_type = _input_script_type_to_output(ist)
-                    break
-                elif deriv.fingerprint == master_fp:
-                    address_n = list(deriv.derivation)
-                    found_change = True
-                    sp_data = script_pubkey.data if script_pubkey else b""
-                    redeem_data = (
-                        out_scope.redeem_script.data
-                        if out_scope.redeem_script
-                        else None
-                    )
-                    ist = detect_script_type(sp_data, redeem_data, None)
-                    out_script_type = _input_script_type_to_output(ist)
-                    break
+            out_script_type = OutputScriptType.PAYTOADDRESS
 
-        if found_change:
+        if matched is not None:
             # Multisig change output
             multisig = None
             if out_scope.witness_script:
