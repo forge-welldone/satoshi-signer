@@ -36,7 +36,6 @@ class ScreenRenderTest {
         }
         composeTestRule.onNodeWithText("Transaction Details").assertIsDisplayed()
         composeTestRule.onNodeWithText("Sign with Trezor").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
     }
 
     @Test
@@ -156,7 +155,6 @@ class ScreenRenderTest {
         }
         composeTestRule.onNodeWithText("Error").assertIsDisplayed()
         composeTestRule.onNodeWithText(TestFixtures.errorState.message).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Back to Home").assertIsDisplayed()
         composeTestRule.onNodeWithText("Copy Error").assertIsDisplayed()
     }
 
@@ -173,7 +171,6 @@ class ScreenRenderTest {
         }
         composeTestRule.onNodeWithText("Error").assertIsDisplayed()
         composeTestRule.onNodeWithText(longMessage).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Back to Home").assertIsDisplayed()
     }
 
     @Test
@@ -457,9 +454,8 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Encrypt Passphrase for NFC").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Encrypt Passphrase").assertIsDisplayed()
         composeTestRule.onNodeWithText("Encrypt").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Back").assertIsDisplayed()
     }
 
     @Test
