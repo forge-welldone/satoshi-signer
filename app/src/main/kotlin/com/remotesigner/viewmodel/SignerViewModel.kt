@@ -8,13 +8,13 @@ import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
 import com.remotesigner.data.AppDatabase
 import com.remotesigner.data.ContactRepository
+import com.remotesigner.data.InboxRepository
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.InboxStatus
 import com.remotesigner.nostr.NostrKeyManager
 import com.remotesigner.nostr.NostrReceiver
-import com.remotesigner.nostr.formatBtcAmount
 import com.remotesigner.usb.SigningBridge
 import com.remotesigner.usb.TrezorUsbManager
 import kotlinx.coroutines.Dispatchers
@@ -148,13 +148,18 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     // --- Nostr inbox ---
     val keyManager = NostrKeyManager(application)
     private val inboxDao = AppDatabase.getInstance(application).inboxDao()
-    val inboxItems: StateFlow<List<InboxItemEntity>> = inboxDao.getAll()
+    private val inboxRepository = InboxRepository(inboxDao, pythonBridge)
+    val inboxItems: StateFlow<List<InboxItemEntity>> = inboxRepository.items
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private var currentSigningInboxId: String? = null
 
     private val nostrReceiver = NostrReceiver(
         keyManager = keyManager,
-        onItem = { item -> handleInboxEvent(item) },
+        onItem = { item ->
+            viewModelScope.launch(Dispatchers.IO) {
+                inboxRepository.handleInboxEvent(item)
+            }
+        },
         scope = viewModelScope,
     )
 
@@ -165,15 +170,8 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         inboxSeedJob = viewModelScope.launch {
-            val now = System.currentTimeMillis() / 1000
-            inboxDao.deleteExpired(
-                pendingCutoff = now - 86_400,
-                signedCutoff = now - 86_400 * 7,
-            )
-            val persisted = inboxDao.getAllOnce()
-            if (persisted.isNotEmpty()) {
-                nostrReceiver.seedSeenIds(persisted.map { it.id }.toSet())
-            }
+            val ids = inboxRepository.cleanupAndSeedIds()
+            if (ids.isNotEmpty()) nostrReceiver.seedSeenIds(ids)
         }
     }
 
@@ -186,41 +184,15 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun stopNostrReceiver() = nostrReceiver.disconnect()
 
-    private fun handleInboxEvent(item: InboxItemEntity) {
-        viewModelScope.launch {
-            val inserted = inboxDao.insertIgnore(item)
-            if (inserted == -1L) return@launch
-
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    pythonBridge.parsePsbt(item.psbtBytes)
-                }
-                @Suppress("UNCHECKED_CAST")
-                val outputs = result["outputs"] as? List<Map<String, Any?>> ?: emptyList()
-                val totalSent = outputs
-                    .filter { it["is_change"] as? Boolean != true }
-                    .sumOf { (it["amount"] as? Number)?.toLong() ?: 0L }
-                val network = result["network"]?.toString() ?: "main"
-                inboxDao.updateParsedFields(
-                    id = item.id,
-                    amount = formatBtcAmount(totalSent),
-                    network = network,
-                )
-            } catch (_: Exception) {
-                // Keep original row if parse fails
-            }
-        }
-    }
-
     fun signInboxItem(item: InboxItemEntity) {
         currentSigningInboxId = item.id
         currentDescription = item.label.ifBlank { null }
-        viewModelScope.launch { inboxDao.updateStatus(item.id, InboxStatus.SIGNING) }
+        viewModelScope.launch { inboxRepository.updateStatus(item.id, InboxStatus.SIGNING) }
         loadPsbt(item.psbtBytes)
     }
 
     fun deleteInboxItem(id: String) {
-        viewModelScope.launch { inboxDao.updateStatus(id, InboxStatus.DELETED) }
+        viewModelScope.launch { inboxRepository.updateStatus(id, InboxStatus.DELETED) }
     }
 
     fun openInboxResult(item: InboxItemEntity) {
@@ -448,9 +420,9 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                     if (inboxId != null) {
                         val rawTx = result["raw_tx"]?.toString()
                         if (rawTx != null) {
-                            inboxDao.updateSigned(inboxId, InboxStatus.SIGNED, rawTx, network)
+                            inboxRepository.updateSigned(inboxId, InboxStatus.SIGNED, rawTx, network)
                         } else {
-                            inboxDao.updateStatus(inboxId, InboxStatus.SIGNED)
+                            inboxRepository.updateStatus(inboxId, InboxStatus.SIGNED)
                         }
                     }
                     _state.value = AppState.Result(
@@ -472,7 +444,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 "cancelled" -> {
                     val inboxId = currentSigningInboxId
                     if (inboxId != null) {
-                        inboxDao.updateStatus(inboxId, InboxStatus.PENDING)
+                        inboxRepository.updateStatus(inboxId, InboxStatus.PENDING)
                     }
                     if (currentPsbtBytes != null) {
                         parsePsbt(currentPsbtBytes!!)
@@ -483,7 +455,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 else -> {
                     val inboxId = currentSigningInboxId
                     if (inboxId != null) {
-                        inboxDao.updateStatus(inboxId, InboxStatus.FAILED)
+                        inboxRepository.updateStatus(inboxId, InboxStatus.FAILED)
                     }
                     _state.value = AppState.Error(
                         result["message"]?.toString() ?: "Signing failed"
@@ -493,7 +465,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) {
             val inboxId = currentSigningInboxId
             if (inboxId != null) {
-                inboxDao.updateStatus(inboxId, InboxStatus.FAILED)
+                inboxRepository.updateStatus(inboxId, InboxStatus.FAILED)
             }
             val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
             _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
@@ -528,7 +500,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 val inboxId = currentSigningInboxId
                 if (inboxId != null && txid != null) {
-                    inboxDao.updateBroadcast(inboxId, InboxStatus.BROADCAST, txid, targetNetwork)
+                    inboxRepository.updateBroadcast(inboxId, InboxStatus.BROADCAST, txid, targetNetwork)
                 }
             } else {
                 _state.value = state.copy(
@@ -541,7 +513,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     fun cancelSigning() {
         val inboxId = currentSigningInboxId
         if (inboxId != null) {
-            viewModelScope.launch { inboxDao.updateStatus(inboxId, InboxStatus.PENDING) }
+            viewModelScope.launch { inboxRepository.updateStatus(inboxId, InboxStatus.PENDING) }
         }
         currentSigningCallback?.cancel()
         currentSigningCallback = null
@@ -623,10 +595,10 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
                 when (currentState) {
                     is AppState.Result -> {
                         if (currentState.txid == null) {
-                            inboxDao.updateStatus(inboxId, InboxStatus.SIGNED)
+                            inboxRepository.updateStatus(inboxId, InboxStatus.SIGNED)
                         }
                     }
-                    is AppState.Error -> inboxDao.updateStatus(inboxId, InboxStatus.FAILED)
+                    is AppState.Error -> inboxRepository.updateStatus(inboxId, InboxStatus.FAILED)
                     else -> {}
                 }
             }
