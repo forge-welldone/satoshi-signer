@@ -122,6 +122,41 @@ class ContactRepositoryTest {
     }
 
     @Test
+    fun saveContact_existing_contact_with_same_fingerprint_does_not_crash() = runTest {
+        repo.saveContact("Alice", "a1b2c3d4", existingContactId = null)
+        val contactId = repo.enrichSigners(
+            listOf(SignerInfo(fingerprint = "a1b2c3d4", signed = false))
+        )[0].contactId!!
+
+        // Re-saving same fingerprint to same contact should be a no-op, not crash
+        repo.saveContact("", "a1b2c3d4", existingContactId = contactId)
+
+        val enriched = repo.enrichSigners(
+            listOf(SignerInfo(fingerprint = "a1b2c3d4", signed = false))
+        )
+        assertEquals("Alice", enriched[0].contactLabel)
+        assertEquals(contactId, enriched[0].contactId)
+    }
+
+    @Test
+    fun saveContact_moves_fingerprint_to_different_contact() = runTest {
+        repo.saveContact("Alice", "a1b2c3d4", existingContactId = null)
+        repo.saveContact("Bob", "e5f6a7b8", existingContactId = null)
+        val bobId = repo.enrichSigners(
+            listOf(SignerInfo(fingerprint = "e5f6a7b8", signed = false))
+        )[0].contactId!!
+
+        // Move Alice's fingerprint to Bob's contact
+        repo.saveContact("", "a1b2c3d4", existingContactId = bobId)
+
+        val enriched = repo.enrichSigners(
+            listOf(SignerInfo(fingerprint = "a1b2c3d4", signed = false))
+        )
+        assertEquals("Bob", enriched[0].contactLabel)
+        assertEquals(bobId, enriched[0].contactId)
+    }
+
+    @Test
     fun deleteFingerprint_keeps_contact() = runTest {
         repo.saveContact("Alice", "a1b2c3d4", existingContactId = null)
         val contactId = repo.enrichSigners(

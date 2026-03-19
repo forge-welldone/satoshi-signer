@@ -33,6 +33,9 @@ interface ContactDao {
     @Update
     suspend fun updateContact(contact: Contact)
 
+    @Query("UPDATE contact_fingerprints SET contactId = :contactId WHERE fingerprint = :fingerprint")
+    suspend fun updateFingerprintContact(contactId: Long, fingerprint: String): Int
+
     @Query("DELETE FROM contacts WHERE id = :id")
     suspend fun deleteContact(id: Long)
 

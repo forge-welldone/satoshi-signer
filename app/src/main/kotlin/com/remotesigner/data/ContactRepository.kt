@@ -25,9 +25,12 @@ class ContactRepository(private val contactDao: ContactDao) {
     suspend fun saveContact(label: String, fingerprint: String, existingContactId: Long?) {
         val normalized = FingerprintValidator.normalize(fingerprint) ?: return
         if (existingContactId != null) {
-            contactDao.insertFingerprint(
-                ContactFingerprint(contactId = existingContactId, fingerprint = normalized)
-            )
+            val updated = contactDao.updateFingerprintContact(existingContactId, normalized)
+            if (updated == 0) {
+                contactDao.insertFingerprint(
+                    ContactFingerprint(contactId = existingContactId, fingerprint = normalized)
+                )
+            }
         } else {
             val trimmed = label.trim()
             if (trimmed.isEmpty() || trimmed.length > 50) return
