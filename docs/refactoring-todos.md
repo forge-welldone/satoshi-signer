@@ -64,29 +64,33 @@
 
 ---
 
-### 4. Broadcaster silently falls back to mainnet for unknown network values
+### ~~4. Broadcaster silently falls back to mainnet for unknown network values~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `remotesigner/broadcaster.py:28` |
 | **Consensus** | Python Engineer |
 | **Impact** | Typo like `network="testt"` broadcasts to mainnet without warning |
 
-`ENDPOINTS.get(network, ENDPOINTS["main"])` silently falls back. For a transaction broadcast function, this is dangerous.
+~~`ENDPOINTS.get(network, ENDPOINTS["main"])` silently falls back. For a transaction broadcast function, this is dangerous.~~
 
-**Fix:** Raise `ValueError` for unrecognized network values.
+~~**Fix:** Raise `ValueError` for unrecognized network values.~~
+
+**Fixed:** `broadcast_transaction` now raises `ValueError` for any network not in `ENDPOINTS`. Added testnet3, testnet4, and signet endpoints. `"test"` kept as backward-compat alias for testnet3.
 
 ---
 
-### 5. No input validation on broadcast raw_hex parameter
+### ~~5. No input validation on broadcast raw_hex parameter~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `remotesigner/broadcaster.py:19` |
 | **Consensus** | Python Engineer |
 | **Impact** | Any string sent directly to mempool.space/blockstream |
 
-No validation that the string is valid hex, parses as a transaction, or has reasonable length.
+~~No validation that the string is valid hex, parses as a transaction, or has reasonable length.~~
 
-**Fix:** Validate hex encoding and add a size limit before HTTP request.
+~~**Fix:** Validate hex encoding and add a size limit before HTTP request.~~
+
+**Fixed:** `broadcast_transaction` now validates: non-empty string, valid hex encoding, even length, and 400KB max transaction size. Raises `ValueError` on any mismatch.
 
 ---
 
