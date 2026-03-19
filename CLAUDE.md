@@ -74,12 +74,12 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 
 **Network auto-detected from PSBT** — `parse_psbt` reads BIP32 derivation paths: coin_type 1 = testnet, coin_type 0 = mainnet. The detected network is passed through to `sign_psbt` so the correct coin name ("Bitcoin" vs "Testnet") is used. Since BIP32 coin_type is `1` for all testnet variants (testnet3, testnet4, signet), auto-detection can only distinguish mainnet vs "not mainnet" — the specific testnet variant is chosen by the user at broadcast time.
 
-**PythonBridge uses JSON round-trip** — Chaquopy's `toJava(Object.class)` doesn't recursively convert nested Python dicts/lists. `PythonBridge` serializes Python return values with `json.dumps`, then parses in Kotlin with `org.json.JSONObject`.
+**PythonBridge uses JSON round-trip with typed models** — Chaquopy's `toJava(Object.class)` doesn't recursively convert nested Python dicts/lists. `PythonBridge` serializes Python return values with `json.dumps`, then parses in Kotlin with `org.json.JSONObject`. For `parsePsbt()` and `broadcast()`, the JSON maps are further converted to typed Kotlin data classes (`ParsedPsbtResult`, `BroadcastResult`) in `PythonBridge` via `toParseResult()`/`toBroadcastResult()` helpers — consumers receive typed objects directly. `signPsbt()` still returns `Map<String, Any?>` since `SigningOrchestrator` already maps it to a typed `SigningResult` sealed class. Shared domain types (`TxInput`, `TxOutput`, `SignerInfo`) live in `bridge/BridgeModels.kt`. Python functions have `TypedDict` annotations documenting their return shapes.
 
 ## Source Layout
 
 - `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge, Nostr)
-- `app/src/main/kotlin/com/remotesigner/bridge/` — Python bridge (`PythonBridge`, `PythonBridgeInterface`, `SigningCallbackImpl`), `SigningOrchestrator` (USB lifecycle + signing flow)
+- `app/src/main/kotlin/com/remotesigner/bridge/` — Python bridge (`PythonBridge`, `PythonBridgeInterface`, `SigningCallbackImpl`), `SigningOrchestrator` (USB lifecycle + signing flow), `BridgeModels` (typed response models + shared domain types)
 - `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation, `ContactRepository`, `InboxRepository`
 - `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
 - `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
