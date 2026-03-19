@@ -312,7 +312,7 @@ tests/
 - No seed phrases, no key material stored on the phone
 - USB communication is direct (no network intermediary)
 - Signing works fully offline; only broadcasting requires network
-- The app is stateless — no databases, no wallet storage, no caching
+- Minimal persistent state — Room database stores only cosigner contacts and Nostr inbox items (no wallet data, no keys, no transaction history)
 
 ## Electrum Plugin (Nostr Signer)
 
