@@ -16,7 +16,6 @@ Pure utility module — no trezorlib or embit dependencies.
 from dataclasses import dataclass
 
 OP_CHECKMULTISIG = 0xAE
-HARDENED = 0x80000000
 
 @dataclass
 class MultisigInfo:
@@ -44,22 +43,34 @@ The function consolidates the validation logic currently duplicated:
 ### Changes to `psbt_parser.py`
 
 - Delete `_parse_multisig_info` function (lines 211-231)
-- Import `parse_multisig_script` and `HARDENED` from `script_utils`
-- `_analyze_signing_status`: replace `_parse_multisig_info(ms.data)` with `parse_multisig_script(ms.data)`, read `.m` and `.n`
-- `_detect_network`: replace local `HARDENED = 0x80000000` with imported constant
+- Import `parse_multisig_script` from `script_utils`
+- `_analyze_signing_status` call site changes from tuple unpacking to object access:
+  ```python
+  # Before:
+  m, n = _parse_multisig_info(ms.data)
+  if m is not None:
+      required_sigs = max(required_sigs, m)
+      total_sigs = max(total_sigs, n)
+
+  # After:
+  info = parse_multisig_script(ms.data)
+  if info is not None:
+      required_sigs = max(required_sigs, info.m)
+      total_sigs = max(total_sigs, info.n)
+  ```
 
 ### Changes to `signer.py`
 
-- `_parse_multisig_script` calls `parse_multisig_script()` for the byte parsing, then builds `MultisigRedeemScriptType` from `MultisigInfo.pubkeys`. The function signature and return type stay the same.
-- Replace hardcoded `0x80000000` with imported `HARDENED` constant where applicable
+- `_parse_multisig_script` calls `parse_multisig_script()` for the byte parsing, then builds `MultisigRedeemScriptType` from `MultisigInfo.pubkeys`. The function signature and return type stay the same — all 4 call sites unchanged.
 
 ### Tests
 
-- **New `tests/test_script_utils.py`**: Direct tests for `parse_multisig_script` — valid 2-of-3, 1-of-1, edge cases (too short, no OP_CHECKMULTISIG, invalid m/n bytes, truncated pubkeys)
+- **New `tests/test_script_utils.py`**: Direct tests for `parse_multisig_script` — valid 2-of-3, 1-of-1, edge cases (too short, no OP_CHECKMULTISIG, invalid m/n bytes, truncated pubkeys). May reuse the `_make_multisig_script` helper pattern from `test_signer.py`.
 - **Existing `tests/test_signer.py`**: Tests for `_parse_multisig_script` continue to pass unchanged — they test the trezorlib wrapper layer
 
 ## Out of Scope
 
 - Taproot vs ECDSA derivation deduplication (TODO #11 — separate item)
+- `HARDENED` constant consolidation — it's a BIP32 derivation constant used in 6+ places across `signer.py` and `psbt_parser.py` for path logic unrelated to multisig scripts. Doesn't belong in a script parsing module.
 - Other OP code constants not used by the multisig parser (e.g., OP_RETURN, OP_DUP)
-- Moving `_is_psbt_fully_signed`'s inline multisig check (it reads `ms_script[-1] == 0xAE` and m/n bytes directly for a quick threshold check — could use `parse_multisig_script` but is a ~3 line inline check, not worth the function call overhead in a hot loop)
+- `_is_psbt_fully_signed`'s inline multisig check — a ~3 line inline check that only needs `m`, not pubkeys. Keeping it inline avoids coupling a quick predicate to the new module.
