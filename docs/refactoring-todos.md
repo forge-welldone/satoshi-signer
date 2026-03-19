@@ -149,16 +149,18 @@
 
 ---
 
-### 9. Refactor sign_psbt in Python (200-line function)
+### ~~9. Refactor sign_psbt in Python (200-line function)~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `remotesigner/signer.py:749-955` |
 | **Consensus** | Python Engineer, Rubyist (2/4) |
 | **Test impact** | 🧪 Smaller functions are independently testable |
 
-A 200-line try/finally/try/except block handling: PSBT parsing, transport creation, fingerprint reading, path resolution, signing, and signature insertion.
+~~A 200-line try/finally/try/except block handling: PSBT parsing, transport creation, fingerprint reading, path resolution, signing, and signature insertion.~~
 
-**Fix:** Extract into: `_connect_and_get_fingerprint()`, `_resolve_paths()`, `_perform_signing()`, `_insert_signatures()`.
+~~**Fix:** Extract into: `_connect_and_get_fingerprint()`, `_resolve_paths()`, `_perform_signing()`, `_insert_signatures()`.~~
+
+**Fixed:** Extracted `_connect_and_get_fingerprint()`, `_resolve_paths()`, `_perform_signing()`, `_insert_signatures()` from the 200-line `sign_psbt()`. Orchestrator is now ~35 lines. All existing tests pass unchanged. Fixed stale docstring (said "signed"/"error", actual statuses are "complete"/"partial"/"cancelled"/"error").
 
 ---
 

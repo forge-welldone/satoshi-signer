@@ -746,6 +746,183 @@ def psbt_to_prev_txes(psbt: PSBT) -> Dict[bytes, TransactionType]:
 # Main signing function
 # ---------------------------------------------------------------------------
 
+def _connect_and_get_fingerprint(
+    bridge,
+    status_callback,
+    coin_name: str,
+    _status: Callable[[str], None],
+) -> Tuple["TrezorClient", bytes]:
+    """Create a Trezor client connection and read the master fingerprint."""
+    _status("Connecting to Trezor...")
+    transport = AndroidTransport(bridge)
+    ui = AndroidTrezorUi(status_callback)
+    client = TrezorClient(transport, ui=ui)
+    _status("Reading device fingerprint...")
+    master_fp = _get_master_fingerprint(client, coin_name)
+    return client, master_fp
+
+
+def _resolve_paths(
+    client: "TrezorClient",
+    coin_name: str,
+    psbt: PSBT,
+    master_fp: bytes,
+    status_callback,
+    _status: Callable[[str], None],
+) -> Dict[bytes, List[int]]:
+    """Resolve derivation path prefixes for watch-only wallet PSBTs.
+
+    Tries auto-detection via ``_find_key_origin``.  Falls back to asking
+    the user via ``status_callback.requestAccountPath()`` when relative
+    paths are present but auto-detection fails.
+    """
+    _status("Checking derivation paths...")
+    fp_to_prefix = _find_key_origin(client, coin_name, psbt, master_fp)
+
+    # Fallback: ask the user for the account path
+    if not fp_to_prefix:
+        # Find a fingerprint with relative paths (if any)
+        rel_fp = None
+        for inp_scope in psbt.inputs:
+            for pub, deriv in inp_scope.bip32_derivations.items():
+                if _is_relative_path(deriv.derivation):
+                    rel_fp = deriv.fingerprint
+                    break
+            if rel_fp:
+                break
+
+        if rel_fp is not None:
+            _status("Could not auto-detect account path")
+            if status_callback is not None:
+                try:
+                    path_str = str(
+                        status_callback.requestAccountPath()
+                    )
+                    prefix = _parse_account_path(path_str)
+                    fp_to_prefix = {rel_fp: prefix}
+                except Exception as e:
+                    raise ValueError(
+                        f"Account path required but not provided: {e}"
+                    )
+            else:
+                raise ValueError(
+                    "PSBT has relative derivation paths. "
+                    "Account path (e.g., m/84'/0'/0') is required."
+                )
+
+    if fp_to_prefix:
+        for fp, prefix in fp_to_prefix.items():
+            path_str = "/".join(
+                f"{p - 0x80000000}'" if p >= 0x80000000 else str(p)
+                for p in prefix
+            )
+            _status(f"Resolved account path: m/{path_str}")
+
+    return fp_to_prefix
+
+
+def _perform_signing(
+    client: "TrezorClient",
+    coin_name: str,
+    psbt: PSBT,
+    master_fp: bytes,
+    fp_to_prefix: Dict[bytes, List[int]],
+    network: str,
+    _status: Callable[[str], None],
+) -> Tuple[list, Optional[bytes], List[TxInputType], List[int]]:
+    """Convert PSBT to trezorlib types and sign on the Trezor.
+
+    Returns ``(signatures, serialized_tx, trezor_inputs, to_ignore)``.
+    """
+    _status("Preparing transaction...")
+    trezor_inputs, to_ignore = psbt_to_trezor_inputs(
+        psbt, master_fp, fp_to_prefix
+    )
+    trezor_outputs = psbt_to_trezor_outputs(
+        psbt, master_fp, network, fp_to_prefix
+    )
+    prev_txes = psbt_to_prev_txes(psbt)
+
+    # Prepare extra sign_tx kwargs from the PSBT global transaction
+    sign_kwargs = {}
+    if psbt.tx_version is not None:
+        sign_kwargs["version"] = psbt.tx_version
+    if psbt.locktime is not None:
+        sign_kwargs["lock_time"] = psbt.locktime
+
+    # Sign!
+    _status("Signing transaction — please confirm on your Trezor...")
+    signatures, serialized_tx = trezor_btc.sign_tx(
+        client,
+        coin_name,
+        trezor_inputs,
+        trezor_outputs,
+        prev_txes=prev_txes,
+        **sign_kwargs,
+    )
+
+    return signatures, serialized_tx, trezor_inputs, to_ignore
+
+
+def _insert_signatures(
+    psbt: PSBT,
+    signatures: list,
+    serialized_tx: Optional[bytes],
+    trezor_inputs: List[TxInputType],
+    to_ignore: List[int],
+    master_fp: bytes,
+    fp_to_prefix: Dict[bytes, List[int]],
+    _status: Callable[[str], None],
+) -> dict:
+    """Insert Trezor signatures into the PSBT and build the result dict.
+
+    Returns a dict with ``status`` (``"complete"`` or ``"partial"``),
+    ``psbt`` (base64), and optionally ``raw_tx`` (hex).
+    """
+    _status("Inserting signatures into PSBT...")
+    for idx, sig in enumerate(signatures):
+        if sig is None or idx in to_ignore:
+            continue
+
+        inp_scope = psbt.inputs[idx]
+        is_taproot = trezor_inputs[idx].script_type == InputScriptType.SPENDTAPROOT
+
+        if is_taproot:
+            # Taproot key-path signature: store as PSBT_IN_TAP_KEY_SIG
+            # embit doesn't natively support key 0x13, so we write to
+            # the unknowns dict which gets serialized on output.
+            inp_scope.unknown[b"\x13"] = sig
+        else:
+            # ECDSA signature: add SIGHASH_ALL byte and store in
+            # partial_sigs keyed by the pubkey
+            sig_with_sighash = sig + b"\x01"
+
+            # Find the pubkey that matches master_fp or fp_to_prefix
+            for pub, deriv in inp_scope.bip32_derivations.items():
+                if deriv.fingerprint == master_fp or (
+                    fp_to_prefix
+                    and deriv.fingerprint in fp_to_prefix
+                ):
+                    inp_scope.partial_sigs[pub] = sig_with_sighash
+                    break
+
+    # Serialize the updated PSBT
+    signed_psbt_b64 = psbt.to_base64()
+
+    # Check whether every input has enough signatures
+    if _is_psbt_fully_signed(psbt) and serialized_tx:
+        return {
+            "status": "complete",
+            "raw_tx": serialized_tx.hex(),
+            "psbt": signed_psbt_b64,
+        }
+    else:
+        return {
+            "status": "partial",
+            "psbt": signed_psbt_b64,
+        }
+
+
 def sign_psbt(
     psbt_bytes: bytes,
     bridge,
@@ -768,11 +945,14 @@ def sign_psbt(
     Returns
     -------
     dict with keys:
-        - ``status``: ``"signed"`` or ``"error"``
-        - ``psbt``: base64-encoded signed PSBT (on success)
-        - ``raw_tx``: hex-encoded serialized transaction (on success, if
-          fully signed)
-        - ``error``: error message string (on failure)
+        - ``status``: ``"complete"``, ``"partial"``, ``"cancelled"``, or
+          ``"error"``
+        - ``psbt``: base64-encoded signed PSBT (on ``"complete"`` or
+          ``"partial"``)
+        - ``raw_tx``: hex-encoded serialized transaction (on ``"complete"``
+          only, when fully signed)
+        - ``message``: error/cancellation message string (on ``"error"``
+          or ``"cancelled"``)
     """
     coin_name = "Bitcoin" if network == "main" else "Testnet"
 
@@ -789,132 +969,25 @@ def sign_psbt(
         psbt_bytes = bytes(psbt_bytes)
         psbt = PSBT.parse(psbt_bytes)
 
-        # Connect to the Trezor
-        _status("Connecting to Trezor...")
-        transport = AndroidTransport(bridge)
-        ui = AndroidTrezorUi(status_callback)
-        client = TrezorClient(transport, ui=ui)
+        client, master_fp = _connect_and_get_fingerprint(
+            bridge, status_callback, coin_name, _status
+        )
 
         try:
-            # Get master fingerprint
-            _status("Reading device fingerprint...")
-            master_fp = _get_master_fingerprint(client, coin_name)
             _status(f"Device fingerprint: {master_fp.hex()}")
 
-            # Resolve key origins for watch-only wallet PSBTs (relative paths)
-            _status("Checking derivation paths...")
-            fp_to_prefix = _find_key_origin(client, coin_name, psbt, master_fp)
-
-            # Fallback: ask the user for the account path
-            if not fp_to_prefix:
-                # Find a fingerprint with relative paths (if any)
-                rel_fp = None
-                for inp_scope in psbt.inputs:
-                    for pub, deriv in inp_scope.bip32_derivations.items():
-                        if _is_relative_path(deriv.derivation):
-                            rel_fp = deriv.fingerprint
-                            break
-                    if rel_fp:
-                        break
-
-                if rel_fp is not None:
-                    _status("Could not auto-detect account path")
-                    if status_callback is not None:
-                        try:
-                            path_str = str(
-                                status_callback.requestAccountPath()
-                            )
-                            prefix = _parse_account_path(path_str)
-                            fp_to_prefix = {rel_fp: prefix}
-                        except Exception as e:
-                            raise ValueError(
-                                f"Account path required but not provided: {e}"
-                            )
-                    else:
-                        raise ValueError(
-                            "PSBT has relative derivation paths. "
-                            "Account path (e.g., m/84'/0'/0') is required."
-                        )
-
-            if fp_to_prefix:
-                for fp, prefix in fp_to_prefix.items():
-                    path_str = "/".join(
-                        f"{p - 0x80000000}'" if p >= 0x80000000 else str(p)
-                        for p in prefix
-                    )
-                    _status(f"Resolved account path: m/{path_str}")
-
-            # Convert PSBT to trezorlib types
-            _status("Preparing transaction...")
-            trezor_inputs, to_ignore = psbt_to_trezor_inputs(
-                psbt, master_fp, fp_to_prefix
-            )
-            trezor_outputs = psbt_to_trezor_outputs(
-                psbt, master_fp, network, fp_to_prefix
-            )
-            prev_txes = psbt_to_prev_txes(psbt)
-
-            # Prepare extra sign_tx kwargs from the PSBT global transaction
-            sign_kwargs = {}
-            if psbt.tx_version is not None:
-                sign_kwargs["version"] = psbt.tx_version
-            if psbt.locktime is not None:
-                sign_kwargs["lock_time"] = psbt.locktime
-
-            # Sign!
-            _status("Signing transaction — please confirm on your Trezor...")
-            signatures, serialized_tx = trezor_btc.sign_tx(
-                client,
-                coin_name,
-                trezor_inputs,
-                trezor_outputs,
-                prev_txes=prev_txes,
-                **sign_kwargs,
+            fp_to_prefix = _resolve_paths(
+                client, coin_name, psbt, master_fp, status_callback, _status
             )
 
-            # Insert signatures back into the PSBT
-            _status("Inserting signatures into PSBT...")
-            for idx, sig in enumerate(signatures):
-                if sig is None or idx in to_ignore:
-                    continue
+            signatures, serialized_tx, trezor_inputs, to_ignore = _perform_signing(
+                client, coin_name, psbt, master_fp, fp_to_prefix, network, _status
+            )
 
-                inp_scope = psbt.inputs[idx]
-                is_taproot = trezor_inputs[idx].script_type == InputScriptType.SPENDTAPROOT
-
-                if is_taproot:
-                    # Taproot key-path signature: store as PSBT_IN_TAP_KEY_SIG
-                    # embit doesn't natively support key 0x13, so we write to
-                    # the unknowns dict which gets serialized on output.
-                    inp_scope.unknown[b"\x13"] = sig
-                else:
-                    # ECDSA signature: add SIGHASH_ALL byte and store in
-                    # partial_sigs keyed by the pubkey
-                    sig_with_sighash = sig + b"\x01"
-
-                    # Find the pubkey that matches master_fp or fp_to_prefix
-                    for pub, deriv in inp_scope.bip32_derivations.items():
-                        if deriv.fingerprint == master_fp or (
-                            fp_to_prefix
-                            and deriv.fingerprint in fp_to_prefix
-                        ):
-                            inp_scope.partial_sigs[pub] = sig_with_sighash
-                            break
-
-            # Serialize the updated PSBT
-            signed_psbt_b64 = psbt.to_base64()
-
-            # Check whether every input has enough signatures
-            if _is_psbt_fully_signed(psbt) and serialized_tx:
-                result = {
-                    "status": "complete",
-                    "raw_tx": serialized_tx.hex(),
-                    "psbt": signed_psbt_b64,
-                }
-            else:
-                result = {
-                    "status": "partial",
-                    "psbt": signed_psbt_b64,
-                }
+            result = _insert_signatures(
+                psbt, signatures, serialized_tx, trezor_inputs, to_ignore,
+                master_fp, fp_to_prefix, _status
+            )
 
             _status("Signing complete.")
             return result
