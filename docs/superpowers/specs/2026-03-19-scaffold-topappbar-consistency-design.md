@@ -16,12 +16,12 @@ Refactor all screens to use `Scaffold` + `TopAppBar` + `BackHandler`, matching t
 
 | Screen | TopAppBar Title | Back Arrow | Body Removals |
 |--------|----------------|------------|---------------|
-| HomeScreen | "Satoshi Signer" | No (root screen) | `headlineLarge` title text |
+| HomeScreen | "Satoshi Signer" | No (root screen) | `headlineLarge` title text, subtitle text stays |
 | TransactionReviewScreen | "Transaction Details" | Yes -> `onCancel` | Title text, "Cancel" `OutlinedButton` |
-| SigningScreen | "Signing" | Yes -> `onCancel` | Dynamic message as title (stays in body as regular text) , "Cancel" `OutlinedButton` |
-| ResultScreen | "Transaction Signed" or "Signature Added" | Yes -> `onHome` | Title text, "Back to Home" `OutlinedButton` |
-| ErrorScreen | "Error" | Yes -> `onHome` | Title text, "Back to Home" `Button` |
-| EncryptPassphraseScreen | "Encrypt Passphrase" | Yes -> `onBack` | Title text, "Back" `OutlinedButton` |
+| SigningScreen | "Signing" | Yes -> `onCancel` | Dynamic message stays in body as regular text. **Keep** body "Cancel" button (more discoverable during active signing) |
+| ResultScreen | "Transaction Signed" or "Signature Added" (conditional on `state.isComplete`) | Yes -> `onHome` | Title text, "Back to Home" `OutlinedButton` |
+| ErrorScreen | "Error" | Yes -> `onHome` | Title text, "Back to Home" `Button`. "Copy Error" button stays but no longer needs a `Row` wrapper |
+| EncryptPassphraseScreen | "Encrypt Passphrase" | Yes -> `onBack` | Title text. Subtitle/description text stays in body |
 | ContactsScreen | No change | No change | No change |
 
 ### What Stays the Same
@@ -30,6 +30,8 @@ Refactor all screens to use `Scaffold` + `TopAppBar` + `BackHandler`, matching t
 - Screen content and layout unchanged beyond removing redundant titles and back buttons
 - State machine navigation architecture unchanged (no NavController)
 - `ContactsScreen` untouched — it already follows the target pattern
+- HomeScreen preserves its centered layout (`horizontalAlignment = CenterHorizontally`)
+- SigningScreen preserves its `DisposableEffect` for `FLAG_KEEP_SCREEN_ON`
 
 ### Pattern
 
@@ -66,9 +68,20 @@ fun ExampleScreen(onBack: () -> Unit) {
 
 `HomeScreen` omits `BackHandler` and the `navigationIcon` parameter since it's the root screen.
 
+### Padding Notes
+
+- After Scaffold padding, body content uses `.padding(horizontal = 16.dp)` consistently
+- HomeScreen currently uses `padding(32.dp)` all-around — this changes to match other screens (Scaffold handles top inset, `horizontal = 16.dp` for sides)
+- Vertical spacing between body elements preserved via existing `Spacer`s
+
 ## Testing
 
-Update existing Android UI tests to account for:
-- TopAppBar presence (title assertions may change)
-- Removed buttons (tests clicking "Cancel"/"Back to Home" need updating)
-- Back gesture behavior (optional — verify `BackHandler` works)
+Specific test assertions that need updating in `ScreenRenderTest.kt`:
+
+- `transactionReviewScreen_displaysDetails`: Remove assertion for "Cancel" button
+- `signingScreen_passphraseDialog_onDeviceAvailable`: "Cancel" `assertCountEquals(2)` stays correct (one in dialog, one in body — body cancel is kept)
+- `errorScreen_displaysMessageAndButtons`: Remove assertion for "Back to Home" button
+- `encryptPassphraseScreen_rendersInitialState`: Remove assertion for "Back" button
+- `resultScreen_completedTransaction`: "Back to Home" assertion needs removal
+
+Title text assertions (e.g. "Transaction Details", "Satoshi Signer") should still pass since TopAppBar renders the same text nodes.
