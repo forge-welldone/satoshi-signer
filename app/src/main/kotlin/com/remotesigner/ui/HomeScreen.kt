@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.RelayStatus
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     npub: String,
@@ -50,19 +51,19 @@ fun HomeScreen(
         uri?.let { onPsbtSelected(it) }
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Satoshi Signer") })
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(32.dp)
+                .padding(padding)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                "Satoshi Signer",
-                style = MaterialTheme.typography.headlineLarge,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "Sign Bitcoin transactions with your Trezor",
                 style = MaterialTheme.typography.bodyLarge,
