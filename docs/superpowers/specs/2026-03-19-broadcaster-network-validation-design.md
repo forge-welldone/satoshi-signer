@@ -108,7 +108,7 @@ Unknown networks throw `IllegalArgumentException` instead of silently producing 
 
 **Callback signature change:** `onBroadcast: () -> Unit` becomes `onBroadcast: (String) -> Unit`, where the string is the target broadcast network. This change ripples to:
 - `AppNavigation.kt`: `onBroadcast = { viewModel.broadcast() }` → `onBroadcast = { network -> viewModel.broadcast(network) }`
-- `ScreenRenderTest.kt`: `onBroadcast = {}` → `onBroadcast = {}`  (lambda with unused param)
+- `ScreenRenderTest.kt`: `onBroadcast = {}` — Kotlin infers `(String) -> Unit` from the composable parameter, no syntax change needed
 - `NavigationTest.kt`: same
 
 **Button layout:**
@@ -121,7 +121,9 @@ When `state.network == "test"` (any testnet variant detected from PSBT), the bro
 
 When `state.network == "main"`, single "Broadcast" button (unchanged).
 
-When `state.network` is already a specific variant (e.g., `"testnet4"` from a reopened inbox item that was already broadcast), the explorer link is shown but the broadcast button state follows existing logic (already broadcast = disabled).
+When `state.network == "test"` from a reopened signed-but-not-broadcast inbox item, the same three-button UI appears — the user picks their target variant just like for a fresh signing result.
+
+When `state.network` is already a specific variant (e.g., `"testnet4"` from a reopened inbox item that was already broadcast), the explorer link uses that variant and the broadcast button state follows existing logic (already broadcast = disabled).
 
 Each button calls `onBroadcast(targetNetwork)` with the specific variant string (`"testnet4"`, `"testnet3"`, `"signet"`).
 
@@ -138,7 +140,7 @@ After successful broadcast, use `targetNetwork` (not `state.network`) when updat
 - Copy `AppState.Result` with `network = targetNetwork` so the explorer link resolves correctly
 - Update `InboxItemEntity.network` to `targetNetwork`
 
-**Important:** The state update must use the `targetNetwork` parameter, not the snapshot's `state.network`, to avoid the stale-read pattern noted in refactoring-todos item #19.
+**Important:** The state update must use the `targetNetwork` parameter, not the snapshot's `state.network`, to avoid the stale-read pattern noted in refactoring-todos item #19. The rest of the snapshot (rawHex, txid, etc.) is safe to use because the Result screen blocks other navigation — no concurrent state mutations are possible.
 
 **DAO change:** `InboxDao.updateBroadcast()` needs a `network` parameter added:
 
@@ -189,5 +191,7 @@ No signature change needed — `broadcast(rawHex, network)` already accepts a ne
 ### Android instrumented tests
 
 - Update `ScreenRenderTest` and `NavigationTest` for new `onBroadcast: (String) -> Unit` signature
+- Update `InboxDaoTest.updateBroadcast_setsStatusAndTxid` for new `updateBroadcast` signature with `network` param
 - Add render test for Result screen with `network = "test"` verifying three broadcast buttons appear
 - Add render test for Result screen with `network = "main"` verifying single broadcast button
+- Existing `test_broadcaster.py` tests for `"main"` and `"test"` remain compatible (both keys still valid)
