@@ -117,16 +117,18 @@
 
 ---
 
-### 7. Create typed bridge response models
+### ~~7. Create typed bridge response models~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `bridge/PythonBridge.kt`, `viewmodel/SignerViewModel.kt:252-276` |
 | **Consensus** | System Architect, Python Engineer (2/4) |
 | **Test impact** | 🧪 Makes bridge contract testable at compile time |
 
-Python returns `Map<String, Any?>`, Kotlin interprets via unchecked casts (`result["outputs"] as? List<Map<String, Any?>>`). A Python key rename silently produces null at runtime.
+~~Python returns `Map<String, Any?>`, Kotlin interprets via unchecked casts (`result["outputs"] as? List<Map<String, Any?>>`). A Python key rename silently produces null at runtime.~~
 
-**Fix:** Define Kotlin data classes (`ParsedPsbtResult`, `SignResult`, `BroadcastResult`) and parse once in `PythonBridge`. On the Python side, define `TypedDict` return types. Two call sites parsing the same output (`parsePsbt` and `handleInboxEvent`) should share the same model.
+~~**Fix:** Define Kotlin data classes (`ParsedPsbtResult`, `SignResult`, `BroadcastResult`) and parse once in `PythonBridge`. On the Python side, define `TypedDict` return types. Two call sites parsing the same output (`parsePsbt` and `handleInboxEvent`) should share the same model.~~
+
+**Fixed:** Created `ParsedPsbtResult` and `BroadcastResult` data classes in `bridge/BridgeModels.kt`. Moved `TxInput`, `TxOutput`, `SignerInfo` to the bridge package. `PythonBridge` now returns typed models via `toParseResult()` and `toBroadcastResult()` helpers. Consumers (`SignerViewModel`, `InboxRepository`) use typed property access — no more unchecked casts. Python TypedDicts added to `psbt_parser.py` and `broadcaster.py`. `signPsbt()` left as `Map<String, Any?>` since `SigningOrchestrator` already provides the typed `SigningResult` sealed class.
 
 ---
 
