@@ -56,10 +56,12 @@ fun EncryptPassphraseScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "The encrypted text can be written to an NFC tag. " +
-                    "Only this phone can decrypt it.",
+                "Warning: Do not rely on NFC tags as your only way to remember " +
+                    "a passphrase. Tags can break or be lost, and if you lose this " +
+                    "phone, the tag becomes permanently unreadable. Always keep your " +
+                    "passphrase memorized or stored securely elsewhere.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.error,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
