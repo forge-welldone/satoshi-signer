@@ -44,14 +44,15 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 - **PSBT export** for partially-signed multisig transactions (via Android share sheet)
 - **Intent filter** — open `.psbt` files directly from file managers and email apps
 - **Nostr PSBT delivery** — receive PSBTs from Electrum over Nostr relays (NIP-04 encrypted). No file transfer needed — just click "Send to Signer" in Electrum. See [Electrum Plugin](#electrum-plugin-nostr-signer) below.
-- **NFC passphrase import** — tap a YubiKey or NDEF tag to enter your Trezor passphrase instead of typing it on the phone keyboard. Optional — the NFC option only appears on devices with NFC hardware.
+- **Encrypted NFC passphrase import** — tap a YubiKey or NDEF tag to enter your Trezor passphrase instead of typing it on the phone keyboard. Passphrases are encrypted on the tag using NIP-04 with the phone's Nostr keypair — an attacker needs both the phone and the tag. Optional — the NFC option only appears on devices with NFC hardware.
+- **NFC passphrase encryption** — built-in screen to encrypt a passphrase for writing to an NFC tag. The user copies the ciphertext and writes it to the tag using external tools.
 
 ## Architecture
 
 ```
 Kotlin/Jetpack Compose (thin shell)     Python backend (via Chaquopy)
 ┌──────────────────────────┐            ┌──────────────────────────┐
-│ UI Screens (5 screens)   │            │ psbt_parser (embit)      │
+│ UI Screens (7 screens)   │            │ psbt_parser (embit)      │
 │ SignerViewModel          │◄──bridge──►│ signer (trezorlib)       │
 │ USB Bridge (UsbRequest)  │            │ broadcaster (requests)   │
 │ Nostr receiver (OkHttp)  │            │ usb_transport (custom)   │
@@ -87,16 +88,30 @@ During signing, the Trezor may prompt for a passphrase. Satoshi Signer offers th
 
 The NFC option is useful for long or complex passphrases that are painful to type on a phone keyboard during every signing session.
 
+### Encryption
+
+Passphrases on NFC tags are **encrypted** using NIP-04 (AES-256-CBC + secp256k1 ECDH) with the phone's Nostr keypair. The phone encrypts to its own public key, so only that specific phone can decrypt the tag. An attacker who reads the tag gets only ciphertext — useless without the phone.
+
+To prepare an NFC tag:
+
+1. Open **Encrypt Passphrase for NFC** from the Home screen
+2. Type your passphrase and tap **Encrypt**
+3. Copy the ciphertext and write it to your NFC tag using external tools (NFC Tools, YubiKey Manager, etc.)
+
+If you switch phones or regenerate your Nostr keypair, re-encrypt the passphrase on the new phone.
+
 ### Compatible NFC Tags
 
-| Tag Type | How it works | Security |
-|----------|-------------|----------|
-| **YubiKey** (static password slot via NDEF) | Passphrase stored in secure element, emitted on tap | Can't be cloned; emits to any NFC reader |
-| **Generic NDEF tag** (NTAG, Mifare, etc.) | Passphrase stored as plaintext NDEF text record | Trivially cloneable by anyone with a phone |
+| Tag Type | Min capacity | Notes |
+|----------|-------------|-------|
+| **NTAG213** | 144 bytes | Fits passphrases up to ~50 chars |
+| **NTAG215** | 504 bytes | Plenty of room |
+| **NTAG216** | 888 bytes | Plenty of room |
+| **YubiKey** (NDEF slot) | Varies | Program via YubiKey Manager |
 
-The app reads whatever NDEF text payload the tag emits — it does not distinguish between tag types. Programming the tag is the user's responsibility (YubiKey Manager for YubiKeys, NFC Tools or similar for generic tags).
+The app reads the NDEF text payload and decrypts it using the phone's Nostr keypair. Programming the tag is the user's responsibility.
 
-**Security trade-off:** NFC moves the passphrase from "something you know" to "something you have." An attacker still needs the Trezor + PIN + phone + NFC tag to sign.
+**Security model:** An attacker needs the Trezor + PIN + phone + NFC tag to sign. The tag alone reveals nothing.
 
 ## Building
 
@@ -161,7 +176,7 @@ adb wait-for-device
 ./gradlew connectedDebugAndroidTest
 ```
 
-Smoke tests verify all 5 screens render correctly and state-machine navigation works.
+Smoke tests verify all 7 screens render correctly and state-machine navigation works.
 
 ### Run Tests (Python, desktop)
 
@@ -219,6 +234,7 @@ app/src/main/
 │       ├── SigningScreen.kt         # Progress + passphrase dialog
 │       ├── ResultScreen.kt          # Broadcast / export
 │       ├── ErrorScreen.kt          # Error display
+│       ├── EncryptPassphraseScreen.kt # NFC passphrase encryption utility
 │       ├── InboxSection.kt         # Nostr inbox UI
 │       └── theme/Theme.kt          # Material 3 theming
 ├── python/remotesigner/
@@ -287,7 +303,7 @@ tests/
 - Android USB Host API
 - Chaquopy 17.0.0
 - OkHttp 4.12.0 — WebSocket client for Nostr relay connections
-- secp256k1-kmp 0.22.0 — secp256k1 ECDH for NIP-04 decryption
+- secp256k1-kmp 0.22.0 — secp256k1 ECDH for NIP-04 encryption/decryption
 - ZXing 3.5.3 — QR code generation for npub display
 
 ## Security

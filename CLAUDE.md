@@ -51,14 +51,14 @@ Android test setup requires a running emulator: `emulator -avd test_device -no-a
 **Two-language bridge pattern:** Kotlin handles UI, USB, and Android lifecycle. Python handles all Bitcoin logic (PSBT parsing, trezorlib signing, broadcasting). They communicate via Chaquopy.
 
 ```
-Compose UI (6 screens) → SignerViewModel (sealed class state machine)
+Compose UI (7 screens) → SignerViewModel (sealed class state machine)
     → PythonBridge (Chaquopy) → Python modules
     → TrezorUsbManager / UsbBridge (Android USB Host API)
     → NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
     → NFC reader mode (Activity) → NDEF text tags (passphrase import)
 ```
 
-**State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error` and `Contacts`). UI renders the screen matching current state.
+**State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error`, `Contacts`, and `EncryptPassphrase`). UI renders the screen matching current state.
 
 **USB bridge inversion:** Python's trezorlib needs USB access, but Android USB APIs are Kotlin-only. Solution: Kotlin's `UsbBridge` does raw 64-byte interrupt endpoint I/O, Python's `AndroidTransport`/`AndroidHandle` wrap it to satisfy trezorlib's `Transport` protocol. Python calls back into Kotlin for every USB read/write.
 
@@ -96,7 +96,7 @@ Compose UI (6 screens) → SignerViewModel (sealed class state machine)
 - **embit ≥0.7** (Python) — Lightweight PSBT parsing
 - **Compose BOM 2024.12.01** — Jetpack Compose UI
 - **OkHttp 4.12.0** — WebSocket client for Nostr relay connections
-- **secp256k1-kmp 0.22.0** (`fr.acinq.secp256k1:secp256k1-kmp-jni-android`) — secp256k1 ECDH for NIP-04 decryption. Lightweight JNI wrapper around Bitcoin's libsecp256k1.
+- **secp256k1-kmp 0.22.0** (`fr.acinq.secp256k1:secp256k1-kmp-jni-android`) — secp256k1 ECDH for NIP-04 encryption/decryption. Lightweight JNI wrapper around Bitcoin's libsecp256k1.
 - **ZXing 3.5.3** (`com.google.zxing:core`) — QR code generation for npub display
 - **Room 2.6.1** (`androidx.room`) — Local SQLite database for contacts and inbox (with KSP annotation processor)
 - Versions managed in `gradle/libs.versions.toml`
@@ -112,12 +112,12 @@ Compose UI (6 screens) → SignerViewModel (sealed class state machine)
 - **Screen stays on during signing** — `FLAG_KEEP_SCREEN_ON` is set while the Signing screen is displayed. Android suspends USB when the screen locks, killing the Trezor connection mid-signing.
 - **USB_DEVICE_ATTACHED intent filter required** — The manifest must declare the USB device filter so our app claims the Trezor when plugged in. Without it, other apps (e.g., Trezor Suite) steal the USB device exclusively. `singleTask` launch mode prevents activity recreation when the intent fires. The ViewModel polls for device attachment when the Trezor isn't connected yet.
 - **Nostr PSBT delivery** — PSBTs can be received from Electrum over Nostr relays (kind 4 events, NIP-04 encryption). `NostrReceiver` connects via OkHttp WebSocket in `onStart()`/`onStop()`. No background service — PSBTs wait on the relay.
-- **Nostr keypair is transport identity only** — Random secp256k1 key in SharedPreferences (`nostr_keys`). Not a signing key, protects nothing of value. npub displayed on Home screen as QR + copyable text for sharing with Electrum.
+- **Nostr keypair is transport identity only** — Random secp256k1 key in SharedPreferences (`nostr_keys`). Not a signing key, protects nothing of value. npub displayed on Home screen as QR + copyable text for sharing with Electrum. Also reused for NFC passphrase encryption (see below).
 - **secp256k1-kmp point multiplication for NIP-04** — `Secp256k1.get().ecdh()` returns SHA-256(compressed_shared_point), NOT the raw x-coordinate NIP-04 needs. Instead, `Nip04.computeSharedSecret()` uses `pubKeyTweakMul(compressedPubkey, privkey)` to get the shared point, then extracts the 32-byte x-coordinate (bytes 1-33 of the 65-byte uncompressed result). The 0x02 prefix is always used for x-only pubkeys (even parity assumption — works because the x-coordinate is the same regardless of y-parity).
 - **Inbox persisted via Room** — `InboxItemEntity` is a Room `@Entity` in `AppDatabase` (version 2). `InboxDao` provides reactive `Flow<List<InboxItemEntity>>` collected via `stateIn` in the ViewModel. Write operations use targeted SQL updates (`updateStatus`, `updateSigned`, `updateBroadcast`) to avoid race conditions. On startup, `deleteExpired()` removes old items (24h for pending/failed/signing, 7d for signed/broadcast), then `getAllOnce()` seeds `NostrReceiver.seenIds` so relays don't overwrite richer local state. Deduplication by Nostr event ID uses conflict-safe `insertIgnore` (not `exists()` + `upsert()`). Signed/broadcast items store `rawHex`, `txid`, and `network` so the Result screen can be reopened from an inbox card.
 - **Passphrase input disables keyboard learning** — The on-phone passphrase `OutlinedTextField` uses `KeyboardType.Password` + `autoCorrect = false` so the IME never learns, suggests, or autocompletes passphrases. `PasswordVisualTransformation` alone only masks display — `KeyboardOptions` are required to control IME behavior.
 - **Cosigner contacts with fingerprint resolution** — Room database stores contacts with one-to-many fingerprints. `TransactionReview` batch-resolves signer fingerprints → labels via `findByFingerprints()`. Quick-add dialog on signer rows creates/assigns contacts without leaving the review screen (modal dialogs, not navigation). Separate `ContactsScreen` for full CRUD. Fingerprints are validated as exactly 8 hex chars, stored lowercase, unique across all contacts. Contact `npub` field exists for future PSBT forwarding via Nostr but is not yet wired to sending logic.
-- **NFC passphrase import** — Passphrase can be read from any NFC tag (YubiKey static password or generic NDEF tag) as an alternative to typing. Uses `enableReaderMode()` on the Activity (not foreground dispatch) — enabled in `onResume()`, disabled in `onPause()`. Reader mode is always active while the Activity is in the foreground to prevent other NFC-handling apps from intercepting tags and stealing focus; the `onTagDiscovered` callback silently ignores tags unless `nfcWaitingForTag` is true. NDEF RTD_TEXT parsing is a pure function (`parseNdefTextPayload`) for testability. NFC is optional (`android:required="false"`) — the option is hidden on devices without NFC. The passphrase feeds into the same `submitPassphrase()` → `LinkedBlockingQueue` path as keyboard input — zero Python changes.
+- **NFC passphrase import with encryption** — Passphrases on NFC tags are encrypted using NIP-04 (AES-256-CBC + secp256k1 ECDH) with the app's Nostr keypair, encrypting to its own pubkey. This means an attacker needs both the phone and the NFC tag — the tag alone is useless. The `EncryptPassphraseScreen` (accessible from Home) lets the user encrypt a passphrase and copy the ciphertext for writing to a tag externally. On read, `onNfcTagResult()` in the ViewModel decrypts before passing to the passphrase dialog. Plaintext tags are not supported — users must re-encrypt after the update. Uses `enableReaderMode()` on the Activity (not foreground dispatch) — enabled in `onResume()`, disabled in `onPause()`. Reader mode is always active while the Activity is in the foreground to prevent other NFC-handling apps from intercepting tags and stealing focus; the `onTagDiscovered` callback silently ignores tags unless `nfcWaitingForTag` is true. NDEF RTD_TEXT parsing is a pure function (`parseNdefTextPayload`) for testability. NFC is optional (`android:required="false"`) — the option is hidden on devices without NFC. The passphrase feeds into the same `submitPassphrase()` → `LinkedBlockingQueue` path as keyboard input — zero Python changes.
 
 ## Development Practices
 
