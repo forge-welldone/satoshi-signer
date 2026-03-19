@@ -96,22 +96,24 @@
 
 ## P1 — Architecture (Fix Before Adding Features)
 
-### 6. Extract responsibilities from SignerViewModel (God Object)
+### ~~6. Extract responsibilities from SignerViewModel (God Object)~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `viewmodel/SignerViewModel.kt` (652 lines) |
 | **Consensus** | All 4 reviewers (4/4) |
 | **Test impact** | 🧪 Enables ViewModel unit testing (currently impossible) |
 
-The ViewModel handles: PSBT parsing, signing orchestration, USB polling, Nostr lifecycle, inbox CRUD, contact CRUD, NFC state, passphrase/account-path callbacks, and broadcast. Mutable `var` fields (`currentPsbtBytes`, `currentUsbBridge`, `currentSigningCallback`, `currentSigningInboxId`, `signingJob`) must be coordinated manually.
+~~The ViewModel handles: PSBT parsing, signing orchestration, USB polling, Nostr lifecycle, inbox CRUD, contact CRUD, NFC state, passphrase/account-path callbacks, and broadcast. Mutable `var` fields (`currentPsbtBytes`, `currentUsbBridge`, `currentSigningCallback`, `currentSigningInboxId`, `signingJob`) must be coordinated manually.~~
 
-**Recommended decomposition:**
-- `SigningOrchestrator` — manages signing flow, bridge lifecycle, callback wiring
-- `InboxRepository` — wraps InboxDao, handles event parsing, inbox lifecycle
-- `ContactRepository` — wraps ContactDao, fingerprint enrichment logic
-- `SignerViewModel` — composition root, holds state, delegates to above, drives navigation
+~~**Recommended decomposition:**~~
+~~- `SigningOrchestrator` — manages signing flow, bridge lifecycle, callback wiring~~
+~~- `InboxRepository` — wraps InboxDao, handles event parsing, inbox lifecycle~~
+~~- `ContactRepository` — wraps ContactDao, fingerprint enrichment logic~~
+~~- `SignerViewModel` — composition root, holds state, delegates to above, drives navigation~~
 
-**Why this matters:** Every feature change requires reading 652 lines. Side-effect interactions between unrelated flows are invisible. Most importantly, the ViewModel can't be unit-tested because it directly instantiates `PythonBridge`, `TrezorUsbManager`, and `AppDatabase`.
+~~**Why this matters:** Every feature change requires reading 652 lines. Side-effect interactions between unrelated flows are invisible. Most importantly, the ViewModel can't be unit-tested because it directly instantiates `PythonBridge`, `TrezorUsbManager`, and `AppDatabase`.~~
+
+**Fixed:** Extracted `ContactRepository`, `InboxRepository`, and `SigningOrchestrator`. Created `PythonBridgeInterface` for testability. ViewModel accepts all dependencies via constructor injection through `SignerViewModelFactory`. ViewModel reduced from ~680 to ~350 lines.
 
 ---
 
