@@ -6,10 +6,12 @@ import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridge
+import com.remotesigner.bridge.SigningCallbackImpl
+import com.remotesigner.bridge.SigningOrchestrator
+import com.remotesigner.bridge.SigningResult
 import com.remotesigner.data.AppDatabase
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
-import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nostr.InboxItemEntity
 import com.remotesigner.nostr.InboxStatus
@@ -22,7 +24,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -97,16 +98,14 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     private val contactRepository = ContactRepository(contactDao)
     val contacts = contactRepository.allWithFingerprints
     val trezorUsb = TrezorUsbManager(application)
+    private val signingOrchestrator = SigningOrchestrator(pythonBridge, trezorUsb)
 
     private var currentPsbtBytes: ByteArray? = null
     private var currentNetwork: String = "main"
     private var currentDescription: String? = null
-    private var currentUsbBridge: SigningBridge? = null
     private var signingJob: Job? = null
-    private val _passphraseRequest = MutableStateFlow<PassphraseRequest?>(null)
-    val passphraseRequest: StateFlow<PassphraseRequest?> = _passphraseRequest.asStateFlow()
-    private val _accountPathRequest = MutableStateFlow<AccountPathRequest?>(null)
-    val accountPathRequest: StateFlow<AccountPathRequest?> = _accountPathRequest.asStateFlow()
+    val passphraseRequest: StateFlow<PassphraseRequest?> = signingOrchestrator.passphraseRequest
+    val accountPathRequest: StateFlow<AccountPathRequest?> = signingOrchestrator.accountPathRequest
 
     private val _nfcWaitingForTag = MutableStateFlow(false)
     val nfcWaitingForTag: StateFlow<Boolean> = _nfcWaitingForTag.asStateFlow()
@@ -142,8 +141,6 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     fun clearNfcResult() {
         _nfcTagResult.value = null
     }
-
-    private var currentSigningCallback: SigningCallbackImpl? = null
 
     // --- Nostr inbox ---
     val keyManager = NostrKeyManager(application)
@@ -290,68 +287,19 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun signWithTrezor() {
         val psbt = currentPsbtBytes ?: return
-        val device = trezorUsb.findTrezorDevice()
-
-        if (device == null) {
-            _state.value = AppState.Signing("Connect Trezor via USB-C cable", log = "Waiting for device...")
-            signingJob = viewModelScope.launch {
-                // Poll for device every second until found or cancelled
-                while (true) {
-                    delay(1000)
-                    val found = trezorUsb.findTrezorDevice()
-                    if (found != null) {
-                        signingJob = null
-                        signWithTrezor()
-                        return@launch
-                    }
-                }
-            }
-            return
-        }
-
-        if (!trezorUsb.hasPermission(device)) {
-            trezorUsb.requestPermission(device) { granted ->
-                if (granted) signWithTrezor()
-                else _state.value = AppState.Error("USB permission denied")
-            }
-            return
-        }
 
         _state.value = AppState.Signing("Connecting to Trezor...", log = "")
 
         signingJob = viewModelScope.launch {
-            fun log(msg: String) {
-                val current = (_state.value as? AppState.Signing)?.log ?: ""
-                _state.value = AppState.Signing(msg, log = current + msg + "\n")
-            }
-
-            try {
-                log("Opening USB connection...")
-                val bridge = withContext(Dispatchers.IO) {
-                    trezorUsb.openDevice(device)
-                        ?: throw IllegalStateException("Failed to open USB device")
-                }
-                currentUsbBridge = bridge
-
-                log(bridge.dumpDeviceInfo())
-
-                log("Claiming interface & finding endpoints...")
-                withContext(Dispatchers.IO) { bridge.open() }
-                log("USB bridge opened OK")
-
-                // Delegate signing to shared suspend function
-                doSignWithBridge(bridge, psbt, currentNetwork)
-            } catch (e: Exception) {
-                // Only catches USB open failures — doSignWithBridge has its own try/catch
-                if (_state.value is AppState.Signing) {
-                    val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
-                    _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
-                }
-            } finally {
-                // Safety net: if doSignWithBridge didn't run, ensure bridge is closed
-                currentUsbBridge?.close()
-                currentUsbBridge = null
-            }
+            val result = signingOrchestrator.signWithTrezor(
+                psbtBytes = psbt,
+                network = currentNetwork,
+                onProgress = { msg ->
+                    val current = (_state.value as? AppState.Signing)?.log ?: ""
+                    _state.value = AppState.Signing(msg, log = current + msg + "\n")
+                },
+            )
+            handleSigningResult(result)
         }
     }
 
@@ -359,124 +307,67 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     internal fun signWithBridge(bridge: SigningBridge, psbtBytes: ByteArray, network: String) {
         _state.value = AppState.Signing("Signing...", log = "")
         signingJob = viewModelScope.launch {
-            doSignWithBridge(bridge, psbtBytes, network, withPassphraseUI = false)
+            val result = signingOrchestrator.signWithBridge(
+                bridge = bridge,
+                psbtBytes = psbtBytes,
+                network = network,
+                onProgress = { msg ->
+                    val current = (_state.value as? AppState.Signing)?.log ?: ""
+                    _state.value = AppState.Signing(msg, log = current + msg + "\n")
+                },
+                withPassphraseUI = false,
+            )
+            handleSigningResult(result)
         }
     }
 
-    private suspend fun doSignWithBridge(
-        bridge: SigningBridge,
-        psbtBytes: ByteArray,
-        network: String,
-        withPassphraseUI: Boolean = true,
-    ) {
-        fun log(msg: String) {
-            val current = (_state.value as? AppState.Signing)?.log ?: ""
-            _state.value = AppState.Signing(msg, log = current + msg + "\n")
-        }
+    private suspend fun handleSigningResult(result: SigningResult) {
+        // Clean up NFC state (was in doSignWithBridge.finally, now orchestrator doesn't own it)
+        _nfcWaitingForTag.value = false
+        _nfcTagResult.value = null
 
-        try {
-            log("Starting Python signing (network=$network)...")
-
-            // When withPassphraseUI is false (tests), pass null callback to Python
-            // so AndroidTrezorUi falls back to on-device passphrase automatically.
-            // When true (production), create a blocking callback for the passphrase dialog.
-            val signingCallback: SigningCallbackImpl? = if (withPassphraseUI) {
-                SigningCallbackImpl(
-                    onStatusUpdate = { status ->
-                        viewModelScope.launch { log("Python: $status") }
-                    },
-                    onPassphraseRequest = { availableOnDevice ->
-                        _passphraseRequest.value = PassphraseRequest(
-                            availableOnDevice, currentSigningCallback!!
-                        )
-                    },
-                    onPassphraseSubmitted = { _passphraseRequest.value = null },
-                    onAccountPathRequest = {
-                        _accountPathRequest.value = AccountPathRequest(
-                            currentSigningCallback!!
-                        )
-                    },
-                    onAccountPathSubmitted = { _accountPathRequest.value = null },
-                ).also { currentSigningCallback = it }
-            } else {
-                null
-            }
-
-            val result = withContext(Dispatchers.IO) {
-                pythonBridge.signPsbt(
-                    psbtBytes = psbtBytes,
-                    bridge = bridge,
-                    callback = signingCallback,
-                    network = network,
+        val inboxId = currentSigningInboxId
+        when (result) {
+            is SigningResult.Complete -> {
+                if (inboxId != null) {
+                    val rawTx = result.rawHex
+                    if (rawTx != null) {
+                        inboxRepository.updateSigned(inboxId, InboxStatus.SIGNED, rawTx, result.network)
+                    } else {
+                        inboxRepository.updateStatus(inboxId, InboxStatus.SIGNED)
+                    }
+                }
+                _state.value = AppState.Result(
+                    isComplete = true,
+                    rawHex = result.rawHex,
+                    network = result.network,
                 )
             }
-            _passphraseRequest.value = null
-            _accountPathRequest.value = null
-            currentSigningCallback = null
-
-            when (result["status"]) {
-                "complete" -> {
-                    val inboxId = currentSigningInboxId
-                    if (inboxId != null) {
-                        val rawTx = result["raw_tx"]?.toString()
-                        if (rawTx != null) {
-                            inboxRepository.updateSigned(inboxId, InboxStatus.SIGNED, rawTx, network)
-                        } else {
-                            inboxRepository.updateStatus(inboxId, InboxStatus.SIGNED)
-                        }
-                    }
-                    _state.value = AppState.Result(
-                        isComplete = true,
-                        rawHex = result["raw_tx"]?.toString(),
-                        network = network,
-                    )
+            is SigningResult.Partial -> {
+                _state.value = AppState.Result(
+                    isComplete = false,
+                    updatedPsbt = result.updatedPsbtBytes,
+                    network = result.network,
+                )
+            }
+            is SigningResult.Cancelled -> {
+                if (inboxId != null) {
+                    inboxRepository.updateStatus(inboxId, InboxStatus.PENDING)
                 }
-                "partial" -> {
-                    val psbtB64 = result["psbt"]?.toString()
-                    _state.value = AppState.Result(
-                        isComplete = false,
-                        updatedPsbt = psbtB64?.let {
-                            android.util.Base64.decode(it, android.util.Base64.DEFAULT)
-                        },
-                        network = network,
-                    )
-                }
-                "cancelled" -> {
-                    val inboxId = currentSigningInboxId
-                    if (inboxId != null) {
-                        inboxRepository.updateStatus(inboxId, InboxStatus.PENDING)
-                    }
-                    if (currentPsbtBytes != null) {
-                        parsePsbt(currentPsbtBytes!!)
-                    } else {
-                        _state.value = AppState.Home
-                    }
-                }
-                else -> {
-                    val inboxId = currentSigningInboxId
-                    if (inboxId != null) {
-                        inboxRepository.updateStatus(inboxId, InboxStatus.FAILED)
-                    }
-                    _state.value = AppState.Error(
-                        result["message"]?.toString() ?: "Signing failed"
-                    )
+                if (currentPsbtBytes != null) {
+                    parsePsbt(currentPsbtBytes!!)
+                } else {
+                    _state.value = AppState.Home
                 }
             }
-        } catch (e: Exception) {
-            val inboxId = currentSigningInboxId
-            if (inboxId != null) {
-                inboxRepository.updateStatus(inboxId, InboxStatus.FAILED)
+            is SigningResult.Error -> {
+                if (inboxId != null) {
+                    inboxRepository.updateStatus(inboxId, InboxStatus.FAILED)
+                }
+                _state.value = AppState.Error(
+                    "${result.message}\n\n--- Log ---\n${result.log}"
+                )
             }
-            val signingLog = (_state.value as? AppState.Signing)?.log ?: ""
-            _state.value = AppState.Error("Signing error: ${e.message}\n\n--- Log ---\n$signingLog")
-        } finally {
-            _passphraseRequest.value = null
-            _accountPathRequest.value = null
-            _nfcWaitingForTag.value = false
-            _nfcTagResult.value = null
-            currentSigningCallback = null
-            bridge.close()
-            currentUsbBridge = null
         }
     }
 
@@ -515,16 +406,11 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
         if (inboxId != null) {
             viewModelScope.launch { inboxRepository.updateStatus(inboxId, InboxStatus.PENDING) }
         }
-        currentSigningCallback?.cancel()
-        currentSigningCallback = null
-        _passphraseRequest.value = null
-        _accountPathRequest.value = null
-        _nfcWaitingForTag.value = false
-        _nfcTagResult.value = null
+        signingOrchestrator.cancel()
         signingJob?.cancel()
         signingJob = null
-        currentUsbBridge?.close()
-        currentUsbBridge = null
+        _nfcWaitingForTag.value = false
+        _nfcTagResult.value = null
         if (currentPsbtBytes != null) {
             viewModelScope.launch { parsePsbt(currentPsbtBytes!!) }
         } else {
