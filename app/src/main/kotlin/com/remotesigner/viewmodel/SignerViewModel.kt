@@ -5,11 +5,10 @@ import android.net.Uri
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.remotesigner.bridge.PythonBridge
+import com.remotesigner.bridge.PythonBridgeInterface
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.bridge.SigningOrchestrator
 import com.remotesigner.bridge.SigningResult
-import com.remotesigner.data.AppDatabase
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
 import com.remotesigner.nfc.NfcReadResult
@@ -88,17 +87,20 @@ data class AccountPathRequest(
     val callback: SigningCallbackImpl,
 )
 
-class SignerViewModel(application: Application) : AndroidViewModel(application) {
+class SignerViewModel(
+    application: Application,
+    private val pythonBridge: PythonBridgeInterface,
+    private val contactRepository: ContactRepository,
+    private val inboxRepository: InboxRepository,
+    private val signingOrchestrator: SigningOrchestrator,
+    val trezorUsb: TrezorUsbManager,
+    val keyManager: NostrKeyManager,
+) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow<AppState>(AppState.Home)
     val state: StateFlow<AppState> = _state.asStateFlow()
 
-    private val pythonBridge = PythonBridge()
-    private val contactDao = AppDatabase.getInstance(application).contactDao()
-    private val contactRepository = ContactRepository(contactDao)
     val contacts = contactRepository.allWithFingerprints
-    val trezorUsb = TrezorUsbManager(application)
-    private val signingOrchestrator = SigningOrchestrator(pythonBridge, trezorUsb)
 
     private var currentPsbtBytes: ByteArray? = null
     private var currentNetwork: String = "main"
@@ -143,9 +145,6 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- Nostr inbox ---
-    val keyManager = NostrKeyManager(application)
-    private val inboxDao = AppDatabase.getInstance(application).inboxDao()
-    private val inboxRepository = InboxRepository(inboxDao, pythonBridge)
     val inboxItems: StateFlow<List<InboxItemEntity>> = inboxRepository.items
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private var currentSigningInboxId: String? = null

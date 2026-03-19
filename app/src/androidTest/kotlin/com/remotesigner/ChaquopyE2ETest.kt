@@ -13,6 +13,7 @@ import com.remotesigner.ui.AppRoot
 import com.remotesigner.ui.theme.SatoshiSignerTheme
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerViewModel
+import com.remotesigner.viewmodel.SignerViewModelFactory
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -39,7 +40,7 @@ class ChaquopyE2ETest {
     @Before
     fun setUp() {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        viewModel = SignerViewModel(app)
+        viewModel = SignerViewModelFactory(app).create(SignerViewModel::class.java)
     }
 
     @Test

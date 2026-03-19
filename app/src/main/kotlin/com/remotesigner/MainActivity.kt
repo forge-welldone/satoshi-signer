@@ -14,10 +14,13 @@ import com.remotesigner.nfc.parseNdefTextPayload
 import com.remotesigner.ui.AppRoot
 import com.remotesigner.ui.theme.SatoshiSignerTheme
 import com.remotesigner.viewmodel.SignerViewModel
+import com.remotesigner.viewmodel.SignerViewModelFactory
 import java.io.IOException
 
 class MainActivity : ComponentActivity() {
-    private val viewModel: SignerViewModel by viewModels()
+    private val viewModel: SignerViewModel by viewModels {
+        SignerViewModelFactory(application)
+    }
     private var nfcAdapter: NfcAdapter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
