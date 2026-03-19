@@ -58,6 +58,7 @@ class NavigationTest {
                     )
                     is AppState.Error -> Unit
                     is AppState.Contacts -> Unit
+                    is AppState.EncryptPassphrase -> Unit
                 }
             }
         }
