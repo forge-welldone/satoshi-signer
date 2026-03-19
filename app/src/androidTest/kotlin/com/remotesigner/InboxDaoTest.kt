@@ -179,4 +179,48 @@ class InboxDaoTest {
         val items = dao.getAllOnce()
         assertEquals(2, items.size)
     }
+
+    @Test
+    fun getAll_excludesDeletedItems() = runTest {
+        dao.upsert(makeItem(id = "visible", status = InboxStatus.PENDING))
+        dao.upsert(makeItem(id = "hidden", status = InboxStatus.DELETED))
+        val items = dao.getAll().first()
+        assertEquals(1, items.size)
+        assertEquals("visible", items[0].id)
+    }
+
+    @Test
+    fun getAllOnce_includesDeletedItems() = runTest {
+        dao.upsert(makeItem(id = "visible", status = InboxStatus.PENDING))
+        dao.upsert(makeItem(id = "hidden", status = InboxStatus.DELETED))
+        val items = dao.getAllOnce()
+        assertEquals(2, items.size)
+    }
+
+    @Test
+    fun deleteExpired_removesOldDeletedItems() = runTest {
+        val now = 1710700000L
+        dao.upsert(makeItem(id = "d1", status = InboxStatus.DELETED, receivedAt = now - 90000))
+        dao.upsert(makeItem(id = "d2", status = InboxStatus.DELETED, receivedAt = now - 7200))
+        dao.deleteExpired(
+            pendingCutoff = now - 86400,
+            signedCutoff = now - 86400 * 7,
+        )
+        val items = dao.getAllOnce()
+        assertEquals(1, items.size)
+        assertEquals("d2", items[0].id)
+    }
+
+    @Test
+    fun softDelete_changesStatusToDeleted() = runTest {
+        dao.upsert(makeItem(id = "event1", status = InboxStatus.PENDING))
+        dao.updateStatus("event1", InboxStatus.DELETED)
+        // Not visible in getAll (UI query)
+        val uiItems = dao.getAll().first()
+        assertTrue(uiItems.isEmpty())
+        // But still in getAllOnce (for seenIds seeding)
+        val allItems = dao.getAllOnce()
+        assertEquals(1, allItems.size)
+        assertEquals(InboxStatus.DELETED, allItems[0].status)
+    }
 }

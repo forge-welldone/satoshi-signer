@@ -1,3 +1,4 @@
 # TODO
 
-- After transaction is signed and broadcasted it should be removed from the pending transactions list received from Nostr, or should be marked as signed.
+- Add top padding to all pages to avoid overlapping with the android status bar.
+- Back gesture does not work. FOr example, if I go to passphrase encryption page I can go back by clicking on the button, but not by swiping from the right edge of the screen.

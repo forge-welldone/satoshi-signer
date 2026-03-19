@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface InboxDao {
-    @Query("SELECT * FROM inbox_items ORDER BY receivedAt DESC")
+    @Query("SELECT * FROM inbox_items WHERE status != 'DELETED' ORDER BY receivedAt DESC")
     fun getAll(): Flow<List<InboxItemEntity>>
 
     @Query("SELECT * FROM inbox_items")
@@ -43,7 +43,7 @@ interface InboxDao {
 
     @Query("""
         DELETE FROM inbox_items WHERE
-        (status IN ('PENDING', 'SIGNING', 'FAILED') AND receivedAt < :pendingCutoff)
+        (status IN ('PENDING', 'SIGNING', 'FAILED', 'DELETED') AND receivedAt < :pendingCutoff)
         OR (status IN ('SIGNED', 'BROADCAST') AND receivedAt < :signedCutoff)
     """)
     suspend fun deleteExpired(pendingCutoff: Long, signedCutoff: Long)

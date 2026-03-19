@@ -127,6 +127,7 @@ private fun StatusChip(status: InboxStatus) {
         InboxStatus.SIGNED -> "signed" to MaterialTheme.colorScheme.secondary
         InboxStatus.BROADCAST -> "broadcast" to MaterialTheme.colorScheme.secondary
         InboxStatus.FAILED -> "failed" to MaterialTheme.colorScheme.error
+        InboxStatus.DELETED -> "deleted" to MaterialTheme.colorScheme.outline
     }
     Surface(
         color = color.copy(alpha = 0.15f),

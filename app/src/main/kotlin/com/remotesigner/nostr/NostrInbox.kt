@@ -4,7 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-enum class InboxStatus { PENDING, SIGNING, SIGNED, BROADCAST, FAILED }
+enum class InboxStatus { PENDING, SIGNING, SIGNED, BROADCAST, FAILED, DELETED }
 
 enum class RelayStatus { CONNECTING, CONNECTED, DISCONNECTED, ERROR }
 

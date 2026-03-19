@@ -222,7 +222,7 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteInboxItem(id: String) {
-        viewModelScope.launch { inboxDao.delete(id) }
+        viewModelScope.launch { inboxDao.updateStatus(id, InboxStatus.DELETED) }
     }
 
     fun openInboxResult(item: InboxItemEntity) {
