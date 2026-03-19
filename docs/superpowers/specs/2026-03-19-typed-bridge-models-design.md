@@ -25,18 +25,21 @@ data class ParsedPsbtResult(
     val status: String,
     val signers: List<SignerInfo>,
     val network: String,
-    val requiredSigs: Int,
-    val totalSigs: Int,
+    val requiredSigs: Int = 0,
+    val totalSigs: Int = 0,
 )
 
 data class BroadcastResult(
     val status: String,
-    val txid: String?,
-    val message: String?,
+    val txid: String? = null,
+    val message: String? = null,
+    val rawHex: String? = null,
 )
 ```
 
 `TxInput`, `TxOutput`, and `SignerInfo` already exist in `SignerViewModel.kt`. They move to `BridgeModels.kt` since they're now part of the bridge contract. `opReturn` field on `TxOutput` is preserved.
+
+Default values on `requiredSigs`/`totalSigs` (0) match the existing behavior — Python only includes these keys for multisig PSBTs. Default `null` on `BroadcastResult` fields reflects that success has `txid` but no `message`, and error has `message` and `rawHex` but no `txid`.
 
 ### PythonBridgeInterface changes
 
@@ -48,7 +51,52 @@ fun signPsbt(...): Map<String, Any?>  // unchanged
 
 ### Parsing moves into PythonBridge
 
-`PythonBridge.parsePsbt()` calls `pyDictToMap()` as before, then converts the map to `ParsedPsbtResult` in a private `toParseResult()` helper. Same pattern for `broadcast()` → `toBroadcastResult()`. All `@Suppress("UNCHECKED_CAST")` annotations move here (single location) or are eliminated by the structured parsing.
+`PythonBridge.parsePsbt()` calls `pyDictToMap()` as before, then converts the map to `ParsedPsbtResult` via a private helper. The `@Suppress("UNCHECKED_CAST")` concentrates in one place — the initial `List<Map<String, Any?>>` casts for nested lists. Snake_case → camelCase mapping happens here:
+
+```kotlin
+@Suppress("UNCHECKED_CAST")
+private fun toParseResult(map: Map<String, Any?>): ParsedPsbtResult {
+    val inputs = (map["inputs"] as? List<Map<String, Any?>> ?: emptyList()).map { inp ->
+        TxInput(
+            address = inp["address"]?.toString() ?: "unknown",
+            amount = (inp["amount"] as? Number)?.toLong() ?: 0,
+        )
+    }
+    val outputs = (map["outputs"] as? List<Map<String, Any?>> ?: emptyList()).map { out ->
+        TxOutput(
+            address = out["address"]?.toString() ?: "unknown",
+            amount = (out["amount"] as? Number)?.toLong() ?: 0,
+            isChange = out["is_change"] as? Boolean ?: false,
+            opReturn = out["op_return"]?.toString(),
+        )
+    }
+    val signers = (map["signers"] as? List<Map<String, Any?>> ?: emptyList()).map { s ->
+        SignerInfo(
+            fingerprint = s["fingerprint"]?.toString() ?: "",
+            signed = s["signed"] as? Boolean ?: false,
+        )
+    }
+    return ParsedPsbtResult(
+        inputs = inputs,
+        outputs = outputs,
+        fee = (map["fee"] as? Number)?.toLong() ?: 0,
+        status = map["status"]?.toString() ?: "unknown",
+        signers = signers,
+        network = map["network"]?.toString() ?: "main",
+        requiredSigs = (map["required_sigs"] as? Number)?.toInt() ?: 0,
+        totalSigs = (map["total_sigs"] as? Number)?.toInt() ?: 0,
+    )
+}
+
+private fun toBroadcastResult(map: Map<String, Any?>): BroadcastResult {
+    return BroadcastResult(
+        status = map["status"]?.toString() ?: "error",
+        txid = map["txid"]?.toString(),
+        message = map["message"]?.toString(),
+        rawHex = map["raw_hex"]?.toString(),
+    )
+}
+```
 
 ### Consumer simplification
 
@@ -63,13 +111,23 @@ fun signPsbt(...): Map<String, Any?>  // unchanged
 - Removes `@Suppress("UNCHECKED_CAST")`
 
 **SignerViewModel.broadcast()** — receives `BroadcastResult`:
-- `result.status == "ok"` (same but now type-safe String, not `Any?`)
+- `result.status == "ok"` (now type-safe String, not `Any?`)
 - `result.txid` instead of `result["txid"]?.toString()`
 - `result.message` instead of `result["message"]`
 
 ### Python side: TypedDicts
 
-Add TypedDict classes to each module for documentation and optional mypy checking:
+Add TypedDict classes for documentation and optional mypy checking. Desktop Python is 3.9 so `NotRequired` needs a conditional import:
+
+```python
+import sys
+if sys.version_info >= (3, 11):
+    from typing import NotRequired, TypedDict
+else:
+    from typing_extensions import NotRequired, TypedDict
+```
+
+Add `typing_extensions>=4.0` to `requirements-dev.txt`.
 
 ```python
 # psbt_parser.py
@@ -119,7 +177,7 @@ No runtime behavior change — TypedDicts are annotation-only at runtime.
 ### Test updates
 
 - **FakePythonBridge** (`InboxRepositoryTest.kt`): returns `ParsedPsbtResult(...)` instead of `mapOf("outputs" to listOf(mapOf(...)))`. Simpler and type-safe.
-- **ChaquopyE2ETest**: assertions change from `result["network"]` to `result.network` etc. The test now verifies that `PythonBridge` correctly produces typed models from real Chaquopy output.
+- **ChaquopyE2ETest**: no assertion changes needed — tests operate at the ViewModel/UI level via `loadPsbt()`, not direct bridge calls.
 - **Python tests**: no changes needed — TypedDicts are still dicts, existing assertions work.
 
 ### What does NOT change
@@ -139,7 +197,11 @@ No runtime behavior change — TypedDicts are annotation-only at runtime.
 | `bridge/PythonBridge.kt` | Add `toParseResult()`, `toBroadcastResult()` private helpers |
 | `viewmodel/SignerViewModel.kt` | Remove data classes, simplify `parsePsbt()` and `broadcast()` |
 | `data/InboxRepository.kt` | Simplify `handleInboxEvent()` |
+| `data/ContactRepository.kt` | Update import: `viewmodel.SignerInfo` → `bridge.SignerInfo` |
+| `ui/TransactionReviewScreen.kt` | Update imports: `viewmodel.{TxInput,TxOutput,SignerInfo}` → `bridge.{...}` |
 | `remotesigner/psbt_parser.py` | Add TypedDict annotations |
 | `remotesigner/broadcaster.py` | Add TypedDict annotations |
-| `androidTest/.../InboxRepositoryTest.kt` | Update FakePythonBridge |
-| `androidTest/.../ChaquopyE2ETest.kt` | Update assertions |
+| `requirements-dev.txt` | Add `typing_extensions>=4.0` |
+| `androidTest/.../InboxRepositoryTest.kt` | Update FakePythonBridge to return typed models |
+| `androidTest/.../TestFixtures.kt` | Update imports: `viewmodel.{TxInput,TxOutput,SignerInfo}` → `bridge.{...}` |
+| `androidTest/.../ContactRepositoryTest.kt` | Update import: `viewmodel.SignerInfo` → `bridge.SignerInfo` |
