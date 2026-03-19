@@ -42,6 +42,10 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
     }
@@ -84,6 +88,8 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.junit)
+    testImplementation("io.mockk:mockk:1.13.13")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.test.runner)
     debugImplementation(libs.compose.ui.test.manifest)

@@ -283,6 +283,7 @@ app/src/androidTest/kotlin/com/remotesigner/
     └── InboxRepositoryTest.kt      # Inbox repository tests
 
 app/src/test/kotlin/com/remotesigner/
+├── viewmodel/SignerViewModelTest.kt # ViewModel state machine (JVM, mockk)
 ├── nfc/NdefTextParserTest.kt       # NFC NDEF parsing (JVM, no emulator needed)
 ├── data/FingerprintValidatorTest.kt # Fingerprint validation (JVM)
 └── ui/MempoolUrlTest.kt            # Mempool URL generation (JVM)

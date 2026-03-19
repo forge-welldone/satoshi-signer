@@ -195,19 +195,21 @@
 
 ## P2 — Quality & Testability (Fix as You Touch the Code)
 
-### 12. 🧪 Add ViewModel unit tests
+### ~~12. 🧪 Add ViewModel unit tests~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | New: `app/src/test/kotlin/com/remotesigner/viewmodel/SignerViewModelTest.kt` |
 | **Consensus** | System Architect, Android Engineer (2/4) |
 | **Depends on** | #6 (extract responsibilities to make testable) |
 
-The most complex component has zero JVM unit tests. With extracted dependencies (#6), test:
-- State transitions: Home → TransactionReview → Signing → Result
-- Cancellation mid-signing
-- Inbox status transitions
-- Contact CRUD methods
-- Error propagation from Python bridge
+~~The most complex component has zero JVM unit tests. With extracted dependencies (#6), test:~~
+~~- State transitions: Home → TransactionReview → Signing → Result~~
+~~- Cancellation mid-signing~~
+~~- Inbox status transitions~~
+~~- Contact CRUD methods~~
+~~- Error propagation from Python bridge~~
+
+**Fixed:** 55 JVM unit tests added using mockk + kotlinx-coroutines-test. Covers: state transitions (Home → TransactionReview → Signing → Result), cancellation mid-signing, inbox status transitions (SIGNING/SIGNED/BROADCAST/FAILED/PENDING/DELETED), contact CRUD with signer re-enrichment, broadcast success/error/exception paths, NFC state management, goHome inbox status preservation, and error propagation from Python bridge. Added `unitTests.isReturnDefaultValues = true` to enable JVM testing of AndroidViewModel without Robolectric.
 
 ---
 

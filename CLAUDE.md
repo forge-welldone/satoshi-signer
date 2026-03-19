@@ -90,6 +90,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
 - `app/src/test/kotlin/com/remotesigner/nfc/` — JVM unit tests for NDEF parsing (no Android needed)
+- `app/src/test/kotlin/com/remotesigner/viewmodel/` — JVM unit tests for ViewModel state machine (mockk + coroutines-test, no Android needed)
 - `app/schemas/` — Room schema JSON exports for migration testing
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
