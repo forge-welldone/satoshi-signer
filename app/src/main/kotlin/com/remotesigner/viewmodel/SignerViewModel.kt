@@ -126,7 +126,19 @@ class SignerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onNfcTagResult(result: NfcReadResult) {
-        _nfcTagResult.value = result
+        if (result is NfcReadResult.Success) {
+            try {
+                val (privkey, pubkey) = keyManager.getOrCreateKeyPair()
+                val decrypted = com.remotesigner.nostr.Nip04.decrypt(privkey, pubkey, result.passphrase)
+                _nfcTagResult.value = NfcReadResult.Success(decrypted)
+            } catch (_: Exception) {
+                _nfcTagResult.value = NfcReadResult.Error(
+                    "Could not decrypt NFC tag \u2014 was it encrypted with this phone\u2019s key?"
+                )
+            }
+        } else {
+            _nfcTagResult.value = result
+        }
     }
 
     fun clearNfcResult() {
