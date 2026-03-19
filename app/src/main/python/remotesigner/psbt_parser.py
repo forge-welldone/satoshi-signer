@@ -3,6 +3,43 @@
 from dataclasses import dataclass, field
 from embit.psbt import PSBT
 from embit.networks import NETWORKS
+import sys
+if sys.version_info >= (3, 11):
+    from typing import NotRequired, TypedDict
+else:
+    from typing_extensions import NotRequired, TypedDict
+
+
+class InputInfo(TypedDict):
+    index: int
+    txid: str
+    vout: int
+    amount: int
+    address: str
+
+
+class OutputInfo(TypedDict):
+    index: int
+    address: str
+    amount: int
+    is_change: bool
+    op_return: NotRequired[str]
+
+
+class SignerStatus(TypedDict):
+    fingerprint: str
+    signed: bool
+
+
+class ParseResult(TypedDict):
+    inputs: list[InputInfo]
+    outputs: list[OutputInfo]
+    fee: int
+    status: str
+    signers: list[SignerStatus]
+    network: str
+    required_sigs: NotRequired[int]
+    total_sigs: NotRequired[int]
 
 
 PSBT_MAGIC = b"psbt\xff"
@@ -18,7 +55,7 @@ class ParsedTransaction:
     raw_psbt: object = None
 
 
-def parse_psbt(psbt_bytes: bytes, network: str = "main") -> dict:
+def parse_psbt(psbt_bytes: bytes, network: str = "main") -> ParseResult:
     """Parse PSBT bytes and return structured transaction data as a dict.
 
     Args:

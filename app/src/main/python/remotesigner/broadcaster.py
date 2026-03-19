@@ -1,6 +1,23 @@
 """Broadcast signed Bitcoin transactions to the network."""
 
 import requests
+import sys
+if sys.version_info >= (3, 11):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict
+
+
+class BroadcastOk(TypedDict):
+    status: str
+    txid: str
+
+
+class BroadcastError(TypedDict):
+    status: str
+    message: str
+    raw_hex: str
+
 
 ENDPOINTS = {
     "main": [
