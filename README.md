@@ -50,14 +50,17 @@ Electrum requires a desktop computer to interact with hardware wallets. No exist
 ## Architecture
 
 ```
-Kotlin/Jetpack Compose (thin shell)     Python backend (via Chaquopy)
+Kotlin/Jetpack Compose                  Python backend (via Chaquopy)
 ┌──────────────────────────┐            ┌──────────────────────────┐
 │ UI Screens (7 screens)   │            │ psbt_parser (embit)      │
 │ SignerViewModel          │◄──bridge──►│ signer (trezorlib)       │
-│ USB Bridge (UsbRequest)  │            │ broadcaster (requests)   │
-│ Nostr receiver (OkHttp)  │            │ usb_transport (custom)   │
-│ NFC reader / file picker │            │ trezor_ui (callbacks)    │
-└──────────┬───────────────┘            └──────────────────────────┘
+│ ├─ ContactRepository     │            │ broadcaster (requests)   │
+│ ├─ InboxRepository       │            │ usb_transport (custom)   │
+│ ├─ SigningOrchestrator   │            │ trezor_ui (callbacks)    │
+│ USB Bridge (UsbRequest)  │            └──────────────────────────┘
+│ Nostr receiver (OkHttp)  │
+│ NFC reader / file picker │
+└──────────┬───────────────┘
            │ USB-C OTG
      ┌─────▼─────┐
      │  Trezor   │
@@ -65,7 +68,7 @@ Kotlin/Jetpack Compose (thin shell)     Python backend (via Chaquopy)
      └───────────┘
 ```
 
-**Kotlin side** handles UI (Jetpack Compose), Android file picker, USB permission management, and interrupt endpoint I/O via `UsbRequest`. All Bitcoin and Trezor logic lives in Python.
+**Kotlin side** handles UI (Jetpack Compose), Android file picker, USB permission management, and interrupt endpoint I/O via `UsbRequest`. The `SignerViewModel` is a composition root that delegates to `ContactRepository` (contact CRUD), `InboxRepository` (Nostr inbox events), and `SigningOrchestrator` (USB lifecycle and Trezor signing). All Bitcoin and Trezor logic lives in Python.
 
 **Python side** uses `trezorlib` (official Trezor library) for device communication and `embit` for PSBT parsing. The PSBT-to-trezorlib conversion logic is ported from [HWI](https://github.com/bitcoin-core/HWI). A custom `trezorlib` transport bridges Android's USB stack to Python via Kotlin callbacks.
 
@@ -213,8 +216,21 @@ Recorded cassettes are replayed by `tests/test_signing_e2e.py` — this tests th
 app/src/main/
 ├── kotlin/com/remotesigner/
 │   ├── MainActivity.kt              # Entry point, intent/NFC handling
-│   ├── bridge/PythonBridge.kt       # Chaquopy bridge to Python
-│   ├── viewmodel/SignerViewModel.kt # State machine (Home→Review→Sign→Result→Error)
+│   ├── bridge/
+│   │   ├── PythonBridgeInterface.kt # Interface + SigningCallback (enables test fakes)
+│   │   ├── PythonBridge.kt          # Chaquopy bridge to Python (implements interface)
+│   │   └── SigningOrchestrator.kt   # USB lifecycle, Trezor signing flow, callbacks
+│   ├── viewmodel/
+│   │   ├── SignerViewModel.kt       # State machine (Home→Review→Sign→Result→Error)
+│   │   └── SignerViewModelFactory.kt # Dependency injection via ViewModelProvider.Factory
+│   ├── data/
+│   │   ├── AppDatabase.kt           # Room database (contacts + inbox)
+│   │   ├── Contact.kt               # Contact, ContactFingerprint, ContactWithFingerprints
+│   │   ├── ContactDao.kt            # Contact DAO
+│   │   ├── ContactRepository.kt     # Contact CRUD + signer enrichment
+│   │   ├── InboxDao.kt              # Inbox DAO
+│   │   ├── InboxRepository.kt       # Inbox event handling + status updates
+│   │   └── FingerprintValidator.kt  # Fingerprint validation (8 hex chars)
 │   ├── usb/
 │   │   ├── SigningBridge.kt         # Interface for production/test USB access
 │   │   ├── TrezorUsbManager.kt     # Device discovery + USB permissions
@@ -259,10 +275,17 @@ app/src/androidTest/kotlin/com/remotesigner/
 ├── NostrKeyManagerTest.kt          # Key storage tests
 ├── Bech32Test.kt                   # Bech32 encoding tests
 ├── PlaybackBridge.kt               # Cassette replay bridge (SigningBridge impl)
-└── TestFixtures.kt                 # Mock AppState instances for tests
+├── TestFixtures.kt                 # Mock AppState instances for tests
+└── data/
+    ├── ContactDaoTest.kt           # Contact DAO tests
+    ├── ContactRepositoryTest.kt    # Contact repository tests
+    ├── InboxDaoTest.kt             # Inbox DAO tests
+    └── InboxRepositoryTest.kt      # Inbox repository tests
 
 app/src/test/kotlin/com/remotesigner/
-└── nfc/NdefTextParserTest.kt       # NFC NDEF parsing (JVM, no emulator needed)
+├── nfc/NdefTextParserTest.kt       # NFC NDEF parsing (JVM, no emulator needed)
+├── data/FingerprintValidatorTest.kt # Fingerprint validation (JVM)
+└── ui/MempoolUrlTest.kt            # Mempool URL generation (JVM)
 
 nostr_signer/                          # Electrum plugin (see below)
 ├── manifest.json                      # Plugin metadata (v0.2.1)

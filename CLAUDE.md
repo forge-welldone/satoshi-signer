@@ -51,12 +51,16 @@ Android test setup requires a running emulator: `emulator -avd test_device -no-a
 **Two-language bridge pattern:** Kotlin handles UI, USB, and Android lifecycle. Python handles all Bitcoin logic (PSBT parsing, trezorlib signing, broadcasting). They communicate via Chaquopy.
 
 ```
-Compose UI (7 screens) → SignerViewModel (sealed class state machine)
-    → PythonBridge (Chaquopy) → Python modules
-    → TrezorUsbManager / UsbBridge (Android USB Host API)
-    → NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
-    → NFC reader mode (Activity) → NDEF text tags (passphrase import)
+Compose UI (7 screens) → SignerViewModel (composition root, sealed class state machine)
+    ├── ContactRepository → ContactDao (Room)
+    ├── InboxRepository → InboxDao (Room) + PythonBridgeInterface
+    ├── SigningOrchestrator → PythonBridgeInterface + TrezorUsbManager / UsbBridge
+    ├── PythonBridge (Chaquopy, implements PythonBridgeInterface) → Python modules
+    ├── NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
+    └── NFC reader mode (Activity) → NDEF text tags (passphrase import)
 ```
+
+**ViewModel is a composition root** — `SignerViewModelFactory` creates all dependencies and injects them via constructor. `ContactRepository` handles contact CRUD and signer enrichment. `InboxRepository` handles Nostr inbox events and status persistence. `SigningOrchestrator` manages USB lifecycle, Trezor signing flow, and passphrase/account-path callbacks (returns `SigningResult` sealed class; ViewModel maps to `AppState`). `PythonBridgeInterface` enables testing without Chaquopy.
 
 **State machine drives navigation** — no NavController. `SignerViewModel` holds a `StateFlow<AppState>` with states: `Home → TransactionReview → Signing → Result` (plus `Error`, `Contacts`, and `EncryptPassphrase`). UI renders the screen matching current state.
 
@@ -64,7 +68,7 @@ Compose UI (7 screens) → SignerViewModel (sealed class state machine)
 
 **Key constraint:** Trezor uses interrupt endpoints (not bulk). Must use `UsbRequest.queue()` + `requestWait()`, not `bulkTransfer()`. USB read timeout is 10 minutes to accommodate slow passphrase entry on the Trezor's screen.
 
-**USB lifecycle owned by Kotlin** — `UsbBridge.open()`/`close()` must be called from Kotlin (IO dispatcher), not from Chaquopy's Python thread. `claimInterface()` fails when called from Chaquopy's native thread. `AndroidHandle.open()`/`close()` are no-ops; the ViewModel opens the bridge before calling Python and closes it in `finally`.
+**USB lifecycle owned by Kotlin** — `UsbBridge.open()`/`close()` must be called from Kotlin (IO dispatcher), not from Chaquopy's Python thread. `claimInterface()` fails when called from Chaquopy's native thread. `AndroidHandle.open()`/`close()` are no-ops; `SigningOrchestrator` opens the bridge before calling Python and closes it in `finally`.
 
 **Trezor exposes two USB interfaces** — Interface 0: VENDOR_SPEC (0xFF, WebUSB), Interface 1: HID (0x03). Both have interrupt endpoints. Firmware responds on WebUSB (interface 0), so prefer VENDOR_SPEC over HID when claiming.
 
@@ -75,7 +79,8 @@ Compose UI (7 screens) → SignerViewModel (sealed class state machine)
 ## Source Layout
 
 - `app/src/main/kotlin/com/remotesigner/` — Kotlin source (UI, ViewModel, USB, bridge, Nostr)
-- `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation
+- `app/src/main/kotlin/com/remotesigner/bridge/` — Python bridge (`PythonBridge`, `PythonBridgeInterface`, `SigningCallbackImpl`), `SigningOrchestrator` (USB lifecycle + signing flow)
+- `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation, `ContactRepository`, `InboxRepository`
 - `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
 - `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
