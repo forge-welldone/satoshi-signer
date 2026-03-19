@@ -85,7 +85,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation, `ContactRepository`, `InboxRepository`
 - `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
 - `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
-- `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, usb_transport, trezor_ui)
+- `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, script_utils, usb_transport, trezor_ui)
 - `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
