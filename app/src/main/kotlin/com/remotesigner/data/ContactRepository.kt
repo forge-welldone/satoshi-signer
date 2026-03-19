@@ -1,6 +1,6 @@
 package com.remotesigner.data
 
-import com.remotesigner.viewmodel.SignerInfo
+import com.remotesigner.bridge.SignerInfo
 import kotlinx.coroutines.flow.Flow
 
 class ContactRepository(private val contactDao: ContactDao) {

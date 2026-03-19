@@ -19,9 +19,9 @@ import androidx.compose.ui.unit.dp
 import com.remotesigner.data.ContactWithFingerprints
 import com.remotesigner.data.FingerprintValidator
 import com.remotesigner.viewmodel.AppState
-import com.remotesigner.viewmodel.SignerInfo
-import com.remotesigner.viewmodel.TxInput
-import com.remotesigner.viewmodel.TxOutput
+import com.remotesigner.bridge.SignerInfo
+import com.remotesigner.bridge.TxInput
+import com.remotesigner.bridge.TxOutput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

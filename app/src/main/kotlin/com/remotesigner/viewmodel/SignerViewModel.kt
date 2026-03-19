@@ -6,9 +6,12 @@ import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridgeInterface
+import com.remotesigner.bridge.SignerInfo
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.bridge.SigningOrchestrator
 import com.remotesigner.bridge.SigningResult
+import com.remotesigner.bridge.TxInput
+import com.remotesigner.bridge.TxOutput
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
 import com.remotesigner.nfc.NfcReadResult
@@ -27,26 +30,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-data class TxInput(
-    val address: String,
-    val amount: Long,
-)
-
-data class TxOutput(
-    val address: String,
-    val amount: Long,
-    val isChange: Boolean,
-    val opReturn: String? = null,
-)
-
-data class SignerInfo(
-    val fingerprint: String,
-    val signed: Boolean,
-    val isThisDevice: Boolean = false,
-    val contactLabel: String? = null,
-    val contactId: Long? = null,
-)
 
 sealed class AppState {
     data object Home : AppState()

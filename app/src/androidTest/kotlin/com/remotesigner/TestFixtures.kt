@@ -3,9 +3,9 @@ package com.remotesigner
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.PassphraseRequest
-import com.remotesigner.viewmodel.SignerInfo
-import com.remotesigner.viewmodel.TxInput
-import com.remotesigner.viewmodel.TxOutput
+import com.remotesigner.bridge.SignerInfo
+import com.remotesigner.bridge.TxInput
+import com.remotesigner.bridge.TxOutput
 
 object TestFixtures {
     val sampleInputs = listOf(

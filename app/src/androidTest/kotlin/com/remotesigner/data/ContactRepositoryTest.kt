@@ -2,7 +2,7 @@ package com.remotesigner.data
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.remotesigner.viewmodel.SignerInfo
+import com.remotesigner.bridge.SignerInfo
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.*
