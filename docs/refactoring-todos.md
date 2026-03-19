@@ -49,16 +49,18 @@
 
 ---
 
-### 3. PKCS7 unpad has no validation — padding oracle in nostr_signer
+### ~~3. PKCS7 unpad has no validation — padding oracle in nostr_signer~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `nostr_signer/nostr_signer.py:91-93` |
 | **Consensus** | Python Engineer |
 | **Impact** | Wrong key/corrupted data produces silent garbage instead of clean error |
 
-`_pkcs7_unpad` trusts the last byte blindly. `pad_len = 0` returns entire buffer; `pad_len > len(data)` silently slices wrong.
+~~`_pkcs7_unpad` trusts the last byte blindly. `pad_len = 0` returns entire buffer; `pad_len > len(data)` silently slices wrong.~~
 
-**Fix:** Validate pad_len range (1–16), verify all padding bytes equal pad_len, raise ValueError on mismatch.
+~~**Fix:** Validate pad_len range (1–16), verify all padding bytes equal pad_len, raise ValueError on mismatch.~~
+
+**Fixed:** `_pkcs7_unpad` now validates: pad_len in range 1–16, pad_len ≤ data length, and all padding bytes equal pad_len. Raises `ValueError` on any mismatch. 10 tests added in `TestPkcs7Padding` including corrupted-ciphertext integration test.
 
 ---
 

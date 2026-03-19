@@ -22,6 +22,8 @@ from nostr_signer.nostr_signer import (
     get_xonly_pubkey,
     schnorr_sign,
     _ecdh,
+    _pkcs7_pad,
+    _pkcs7_unpad,
 )
 
 
@@ -113,6 +115,80 @@ class TestNip04Crypto:
         encrypted = nip04_encrypt(alice_priv, bob.xonly(), payload)
         decrypted = nip04_decrypt(bob_priv, alice.xonly(), encrypted)
         assert decrypted == payload
+
+
+# ---------------------------------------------------------------------------
+# PKCS7 padding validation
+# ---------------------------------------------------------------------------
+
+class TestPkcs7Padding:
+
+    def test_unpad_valid_padding(self):
+        """Valid PKCS7 padding should unpad correctly."""
+        # 3 bytes of padding (each byte = 0x03)
+        data = b"hello" + bytes([3, 3, 3])
+        assert _pkcs7_unpad(data) == b"hello"
+
+    def test_unpad_full_block_padding(self):
+        """Full block of padding (16 bytes) is valid."""
+        data = bytes([16] * 16)
+        assert _pkcs7_unpad(data) == b""
+
+    def test_unpad_single_byte_padding(self):
+        """Single byte padding (0x01) is valid."""
+        data = b"hello world!!!!!" + bytes([1])
+        assert _pkcs7_unpad(data) == b"hello world!!!!!"
+
+    def test_unpad_zero_pad_len_raises(self):
+        """pad_len=0 is invalid PKCS7 — must raise ValueError."""
+        data = b"hello\x00"
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(data)
+
+    def test_unpad_pad_len_exceeds_block_size_raises(self):
+        """pad_len > 16 is invalid PKCS7 — must raise ValueError."""
+        data = b"hello" + bytes([17])
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(data)
+
+    def test_unpad_inconsistent_padding_bytes_raises(self):
+        """All padding bytes must equal pad_len — mixed bytes must raise."""
+        # Claims 3 bytes of padding, but the bytes aren't all 0x03
+        data = b"hello" + bytes([1, 2, 3])
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(data)
+
+    def test_unpad_pad_len_exceeds_data_length_raises(self):
+        """pad_len larger than data itself must raise ValueError."""
+        data = bytes([5])  # Claims 5 bytes of padding but only 1 byte of data
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(data)
+
+    def test_unpad_empty_data_raises(self):
+        """Empty input must raise (no padding byte to read)."""
+        with pytest.raises((ValueError, IndexError)):
+            _pkcs7_unpad(b"")
+
+    def test_pad_unpad_roundtrip(self):
+        """Pad then unpad should return original data."""
+        for msg in [b"", b"x", b"hello", b"a" * 16, b"b" * 31]:
+            padded = _pkcs7_pad(msg)
+            assert _pkcs7_unpad(padded) == msg
+
+    def test_nip04_decrypt_with_corrupted_ciphertext_raises(self):
+        """Corrupted ciphertext should raise due to bad padding, not return garbage."""
+        alice = ec.PrivateKey(os.urandom(32))
+        bob = ec.PrivateKey(os.urandom(32))
+
+        encrypted = nip04_encrypt(alice.secret, bob.xonly(), "test message")
+        # Corrupt the ciphertext (flip a byte)
+        parts = encrypted.split("?iv=")
+        ct_bytes = bytearray(base64.b64decode(parts[0]))
+        ct_bytes[0] ^= 0xFF
+        corrupted = base64.b64encode(bytes(ct_bytes)).decode() + "?iv=" + parts[1]
+
+        with pytest.raises((ValueError, Exception)):
+            nip04_decrypt(bob.secret, alice.xonly(), corrupted)
 
 
 # ---------------------------------------------------------------------------

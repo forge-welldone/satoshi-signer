@@ -89,7 +89,15 @@ def _pkcs7_pad(data: bytes, block_size: int = 16) -> bytes:
 
 
 def _pkcs7_unpad(data: bytes) -> bytes:
+    if len(data) == 0:
+        raise ValueError("Cannot unpad empty data")
     pad_len = data[-1]
+    if pad_len < 1 or pad_len > 16:
+        raise ValueError(f"Invalid PKCS7 pad length: {pad_len}")
+    if pad_len > len(data):
+        raise ValueError(f"Pad length {pad_len} exceeds data length {len(data)}")
+    if not all(b == pad_len for b in data[-pad_len:]):
+        raise ValueError("Invalid PKCS7 padding bytes")
     return data[:-pad_len]
 
 
