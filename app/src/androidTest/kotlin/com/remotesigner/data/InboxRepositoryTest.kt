@@ -2,6 +2,7 @@ package com.remotesigner.data
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.remotesigner.bridge.BroadcastResult
 import com.remotesigner.bridge.ParsedPsbtResult
 import com.remotesigner.bridge.PythonBridgeInterface
 import com.remotesigner.bridge.SigningCallback
@@ -40,7 +41,7 @@ class InboxRepositoryTest {
             psbtBytes: ByteArray, bridge: SigningBridge,
             callback: SigningCallback?, network: String,
         ) = emptyMap<String, Any?>()
-        override fun broadcast(rawHex: String, network: String) = emptyMap<String, Any?>()
+        override fun broadcast(rawHex: String, network: String) = BroadcastResult(status = "ok")
     }
 
     @Before

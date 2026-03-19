@@ -36,9 +36,9 @@ class PythonBridge : PythonBridgeInterface {
         return pyDictToMap(result)
     }
 
-    override fun broadcast(rawHex: String, network: String): Map<String, Any?> {
+    override fun broadcast(rawHex: String, network: String): BroadcastResult {
         val result = broadcasterModule.callAttr("broadcast_transaction", rawHex, network)
-        return pyDictToMap(result)
+        return toBroadcastResult(pyDictToMap(result))
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -72,6 +72,15 @@ class PythonBridge : PythonBridgeInterface {
             network = map["network"]?.toString() ?: "main",
             requiredSigs = (map["required_sigs"] as? Number)?.toInt() ?: 0,
             totalSigs = (map["total_sigs"] as? Number)?.toInt() ?: 0,
+        )
+    }
+
+    private fun toBroadcastResult(map: Map<String, Any?>): BroadcastResult {
+        return BroadcastResult(
+            status = map["status"]?.toString() ?: "error",
+            txid = map["txid"]?.toString(),
+            message = map["message"]?.toString(),
+            rawHex = map["raw_hex"]?.toString(),
         )
     }
 

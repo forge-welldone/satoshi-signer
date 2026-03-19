@@ -338,20 +338,19 @@ class SignerViewModel(
                 pythonBridge.broadcast(state.rawHex, targetNetwork)
             }
 
-            if (result["status"] == "ok") {
-                val txid = result["txid"]?.toString()
+            if (result.status == "ok") {
                 _state.value = state.copy(
-                    txid = txid,
+                    txid = result.txid,
                     broadcastStatus = "Broadcast successful",
                     network = targetNetwork,
                 )
                 val inboxId = currentSigningInboxId
-                if (inboxId != null && txid != null) {
-                    inboxRepository.updateBroadcast(inboxId, InboxStatus.BROADCAST, txid, targetNetwork)
+                if (inboxId != null && result.txid != null) {
+                    inboxRepository.updateBroadcast(inboxId, InboxStatus.BROADCAST, result.txid, targetNetwork)
                 }
             } else {
                 _state.value = state.copy(
-                    broadcastStatus = "Broadcast failed: ${result["message"]}",
+                    broadcastStatus = "Broadcast failed: ${result.message}",
                 )
             }
         }
