@@ -32,6 +32,7 @@ from trezorlib.messages import (
 
 from remotesigner.usb_transport import AndroidTransport
 from remotesigner.trezor_ui import AndroidTrezorUi
+from remotesigner.script_utils import parse_multisig_script as _parse_multisig
 
 
 # ---------------------------------------------------------------------------
@@ -175,36 +176,8 @@ def _parse_multisig_script(
 
     Returns ``None`` if the script is not a recognizable multisig.
     """
-    if len(script) < 37:
-        return None
-    if script[-1] != 0xAE:  # OP_CHECKMULTISIG
-        return None
-
-    # OP_1..OP_16 => 0x51..0x60
-    m_byte = script[0]
-    if not (0x51 <= m_byte <= 0x60):
-        return None
-    m = m_byte - 0x50
-
-    n_byte = script[-2]
-    if not (0x51 <= n_byte <= 0x60):
-        return None
-    n = n_byte - 0x50
-
-    # Extract public keys
-    pubkeys_raw: List[bytes] = []
-    pos = 1
-    for _ in range(n):
-        if pos >= len(script) - 2:
-            return None
-        key_len = script[pos]
-        pos += 1
-        if pos + key_len > len(script) - 2:
-            return None
-        pubkeys_raw.append(script[pos : pos + key_len])
-        pos += key_len
-
-    if len(pubkeys_raw) != n:
+    info = _parse_multisig(script)
+    if info is None:
         return None
 
     # Build HDNodePathType entries for each pubkey.
@@ -212,7 +185,7 @@ def _parse_multisig_script(
     # for matching, without attempting derivation (which would require a
     # real chain_code we don't have).
     hd_nodes: List[HDNodePathType] = []
-    for raw_pub in pubkeys_raw:
+    for raw_pub in info.pubkeys:
         node = HDNodeType(
             depth=0,
             fingerprint=0,
@@ -223,9 +196,9 @@ def _parse_multisig_script(
         hd_nodes.append(HDNodePathType(node=node, address_n=[]))
 
     # Populate signatures array from existing partial_sigs
-    sigs: List[bytes] = [b""] * n
+    sigs: List[bytes] = [b""] * info.n
     if partial_sigs:
-        for j, raw_pub in enumerate(pubkeys_raw):
+        for j, raw_pub in enumerate(info.pubkeys):
             for pub, sig in partial_sigs.items():
                 if pub.sec() == raw_pub:
                     sigs[j] = sig
@@ -234,7 +207,7 @@ def _parse_multisig_script(
     return MultisigRedeemScriptType(
         pubkeys=hd_nodes,
         signatures=sigs,
-        m=m,
+        m=info.m,
     )
 
 
