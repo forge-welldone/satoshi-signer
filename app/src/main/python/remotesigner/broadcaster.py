@@ -7,9 +7,19 @@ ENDPOINTS = {
         "https://mempool.space/api/tx",
         "https://blockstream.info/api/tx",
     ],
-    "test": [
+    "test": [  # backward compat alias for testnet3
         "https://mempool.space/testnet/api/tx",
         "https://blockstream.info/testnet/api/tx",
+    ],
+    "testnet3": [
+        "https://mempool.space/testnet/api/tx",
+        "https://blockstream.info/testnet/api/tx",
+    ],
+    "testnet4": [
+        "https://mempool.space/testnet4/api/tx",
+    ],
+    "signet": [
+        "https://mempool.space/signet/api/tx",
     ],
 }
 
@@ -25,7 +35,12 @@ def broadcast_transaction(raw_hex: str, network: str = "main") -> dict:
         {"status": "ok", "txid": "..."} on success.
         {"status": "error", "message": "...", "raw_hex": "..."} on failure.
     """
-    endpoints = ENDPOINTS.get(network, ENDPOINTS["main"])
+    if network not in ENDPOINTS:
+        raise ValueError(
+            f"Unknown network: {network!r}. "
+            f"Valid: {', '.join(sorted(ENDPOINTS))}"
+        )
+    endpoints = ENDPOINTS[network]
     last_error = ""
 
     for url in endpoints:

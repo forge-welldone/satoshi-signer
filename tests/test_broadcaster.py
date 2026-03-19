@@ -36,3 +36,40 @@ class TestBroadcaster:
         mock_post.return_value = MagicMock(status_code=200, text="txid789")
         result = broadcast_transaction("deadbeef", network="test")
         assert "testnet" in mock_post.call_args[0][0]
+
+    def test_rejects_unknown_network(self):
+        with pytest.raises(ValueError, match="Unknown network"):
+            broadcast_transaction("deadbeef", network="typo")
+
+    def test_rejects_unknown_network_testt(self):
+        with pytest.raises(ValueError, match="Unknown network"):
+            broadcast_transaction("deadbeef", network="testt")
+
+    @patch("remotesigner.broadcaster.requests.post")
+    def test_uses_testnet4_endpoint(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="txid_t4")
+        result = broadcast_transaction("deadbeef", network="testnet4")
+        assert result["status"] == "ok"
+        assert "testnet4" in mock_post.call_args[0][0]
+
+    @patch("remotesigner.broadcaster.requests.post")
+    def test_uses_signet_endpoint(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="txid_sig")
+        result = broadcast_transaction("deadbeef", network="signet")
+        assert result["status"] == "ok"
+        assert "signet" in mock_post.call_args[0][0]
+
+    @patch("remotesigner.broadcaster.requests.post")
+    def test_uses_testnet3_endpoint(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="txid_t3")
+        result = broadcast_transaction("deadbeef", network="testnet3")
+        assert result["status"] == "ok"
+        assert "testnet" in mock_post.call_args[0][0]
+        assert "testnet4" not in mock_post.call_args[0][0]
+
+    @patch("remotesigner.broadcaster.requests.post")
+    def test_test_backward_compat_uses_testnet3_endpoints(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200, text="txid_bc")
+        result = broadcast_transaction("deadbeef", network="test")
+        assert result["status"] == "ok"
+        assert "testnet" in mock_post.call_args[0][0]
