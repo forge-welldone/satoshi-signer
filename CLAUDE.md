@@ -137,6 +137,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 
 - **Always use TDD** — Write or update tests before writing implementation code when writing or refactoring code.
 - **Keep all test suites in sync** — When changing behavior, update both Android instrumented tests (`app/src/androidTest/`) and Python tests (`tests/`) as needed. Don't leave tests broken or stale.
+- **Keep docs current** — After finishing any feature or refactoring, update `CLAUDE.md` (architecture, source layout, conventions) and `README.md` (project structure, dependencies, features) to reflect the changes. Stale docs cause confusion in future sessions.
 
 ## Targets
 
