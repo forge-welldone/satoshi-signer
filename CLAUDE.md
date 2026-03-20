@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Satoshi Signer — an Android app for signing Bitcoin PSBTs with a Trezor hardware wallet via USB-C. PSBTs arrive via file picker, Nostr relay, or clipboard; passphrase entry supports on-device, on-phone, or NFC tag import. Kotlin/Compose UI talks to Python backend (embedded via Chaquopy) which handles PSBT parsing, Trezor signing, and transaction broadcasting.
+Satoshi Signer — an Android app for signing Bitcoin PSBTs with a Trezor hardware wallet via USB-C. PSBTs arrive via file picker, Nostr relay, or clipboard; passphrase entry supports on-device, on-phone, or NFC tag import. Kotlin/Compose UI talks to Python backend (embedded via Chaquopy) which handles PSBT parsing and Trezor signing. Transaction broadcasting is handled in Kotlin via `TransactionBroadcaster`.
 
 ## Build & Test Commands
 
@@ -48,7 +48,7 @@ Android test setup requires a running emulator: `emulator -avd test_device -no-a
 
 ## Architecture
 
-**Two-language bridge pattern:** Kotlin handles UI, USB, and Android lifecycle. Python handles all Bitcoin logic (PSBT parsing, trezorlib signing, broadcasting). They communicate via Chaquopy.
+**Two-language bridge pattern:** Kotlin handles UI, USB, Android lifecycle, and transaction broadcasting. Python handles Bitcoin signing logic (PSBT parsing, trezorlib signing). They communicate via Chaquopy.
 
 ```
 Compose UI (7 screens) → SignerViewModel (composition root, sealed class state machine)
@@ -56,6 +56,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
     ├── InboxRepository → InboxDao (Room) + PythonBridgeInterface
     ├── SigningOrchestrator → PythonBridgeInterface + TrezorUsbManager / UsbBridge
     ├── PythonBridge (Chaquopy, implements PythonBridgeInterface) → Python modules
+    ├── TransactionBroadcaster → OkHttp POST → mempool.space
     ├── NostrReceiver (WebSocket) → Nostr relays (PSBT delivery)
     └── NFC reader mode (Activity) → NDEF text tags (passphrase import)
 ```
@@ -74,9 +75,9 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 
 **Network auto-detected from PSBT** — `parse_psbt` reads BIP32 derivation paths: coin_type 1 = testnet, coin_type 0 = mainnet. The detected network is passed through to `sign_psbt` so the correct coin name ("Bitcoin" vs "Testnet") is used. Since BIP32 coin_type is `1` for all testnet variants (testnet3, testnet4, signet), auto-detection can only distinguish mainnet vs "not mainnet" — the specific testnet variant is chosen by the user at broadcast time.
 
-**Python-Kotlin error convention** — Two patterns, chosen by function type: (1) Validation functions raise exceptions — `parse_psbt` raises `ValueError`, Kotlin consumers catch with try-catch and map to `AppState.Error`. (2) Operations with multiple outcomes return status dicts — `sign_psbt` returns `status: complete|partial|cancelled|error`, `broadcast_transaction` returns `status: ok|error`, Kotlin consumers check the typed model's `status` field. `broadcast_transaction` uses both: raises `ValueError` for input validation (bad hex, unknown network), returns error dict for network failures — callers must handle both.
+**Python-Kotlin error convention** — Two patterns, chosen by function type: (1) Validation functions raise exceptions — `parse_psbt` raises `ValueError`, Kotlin consumers catch with try-catch and map to `AppState.Error`. (2) Operations with multiple outcomes return status dicts — `sign_psbt` returns `status: complete|partial|cancelled|error`, Kotlin consumers check the typed model's `status` field. Broadcasting uses Kotlin's `TransactionBroadcaster`, which throws `IllegalArgumentException` for input validation failures (bad hex, unknown network) and returns a `BroadcastResult` sealed class for network outcomes.
 
-**PythonBridge uses JSON round-trip with typed models** — Chaquopy's `toJava(Object.class)` doesn't recursively convert nested Python dicts/lists. `PythonBridge` serializes Python return values with `json.dumps`, then parses in Kotlin with `org.json.JSONObject`. For `parsePsbt()` and `broadcast()`, the JSON maps are further converted to typed Kotlin data classes (`ParsedPsbtResult`, `BroadcastResult`) in `PythonBridge` via `toParseResult()`/`toBroadcastResult()` helpers — consumers receive typed objects directly. `signPsbt()` still returns `Map<String, Any?>` since `SigningOrchestrator` already maps it to a typed `SigningResult` sealed class. Shared domain types (`TxInput`, `TxOutput`, `SignerInfo`) live in `bridge/BridgeModels.kt`. Python functions have `TypedDict` annotations documenting their return shapes.
+**PythonBridge uses JSON round-trip with typed models** — Chaquopy's `toJava(Object.class)` doesn't recursively convert nested Python dicts/lists. `PythonBridge` serializes Python return values with `json.dumps`, then parses in Kotlin with `org.json.JSONObject`. For `parsePsbt()`, the JSON map is further converted to the typed Kotlin data class `ParsedPsbtResult` in `PythonBridge` via `toParseResult()` — consumers receive typed objects directly. `signPsbt()` returns `Map<String, Any?>` since `SigningOrchestrator` already maps it to a typed `SigningResult` sealed class. Shared domain types (`TxInput`, `TxOutput`, `SignerInfo`) live in `bridge/BridgeModels.kt`. Python functions have `TypedDict` annotations documenting their return shapes.
 
 ## Source Layout
 
@@ -85,13 +86,15 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation, `ContactRepository`, `InboxRepository`
 - `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
 - `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
-- `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, broadcaster, script_utils, usb_transport, trezor_ui)
+- `app/src/main/kotlin/com/remotesigner/broadcast/` — Kotlin broadcaster (`TransactionBroadcaster`, `BroadcastResult`)
+- `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, script_utils, usb_transport, trezor_ui)
 - `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)
 - `app/src/test/kotlin/com/remotesigner/nfc/` — JVM unit tests for NDEF parsing (no Android needed)
 - `app/src/test/kotlin/com/remotesigner/nostr/` — JVM unit tests for Bech32 encoding/decoding (no Android needed)
 - `app/src/test/kotlin/com/remotesigner/viewmodel/` — JVM unit tests for ViewModel state machine (mockk + coroutines-test, no Android needed)
+- `app/src/test/kotlin/com/remotesigner/broadcast/` — JVM unit tests for broadcaster (MockWebServer)
 - `app/schemas/` — Room schema JSON exports for migration testing
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
@@ -128,7 +131,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - **Cosigner contacts with fingerprint resolution** — Room database stores contacts with one-to-many fingerprints. `TransactionReview` batch-resolves signer fingerprints → labels via `findByFingerprints()`. Quick-add dialog on signer rows creates/assigns contacts without leaving the review screen (modal dialogs, not navigation). Separate `ContactsScreen` for full CRUD. Fingerprints are validated as exactly 8 hex chars, stored lowercase, unique across all contacts. Contact `npub` field exists for future PSBT forwarding via Nostr but is not yet wired to sending logic.
 - **NFC passphrase import with encryption** — Passphrases on NFC tags are encrypted using NIP-04 (AES-256-CBC + secp256k1 ECDH) with the app's Nostr keypair, encrypting to its own pubkey. This means an attacker needs both the phone and the NFC tag — the tag alone is useless. The `EncryptPassphraseScreen` (accessible from Home) lets the user encrypt a passphrase and copy the ciphertext for writing to a tag externally. On read, `onNfcTagResult()` in the ViewModel decrypts before passing to the passphrase dialog. Plaintext tags are not supported — users must re-encrypt after the update. Uses `enableReaderMode()` on the Activity (not foreground dispatch) — enabled in `onResume()`, disabled in `onPause()`. Reader mode is always active while the Activity is in the foreground to prevent other NFC-handling apps from intercepting tags and stealing focus; the `onTagDiscovered` callback silently ignores tags unless `nfcWaitingForTag` is true. NDEF RTD_TEXT parsing is a pure function (`parseNdefTextPayload`) for testability. NFC is optional (`android:required="false"`) — the option is hidden on devices without NFC. The passphrase feeds into the same `submitPassphrase()` → `LinkedBlockingQueue` path as keyboard input — zero Python changes.
 
-- **Testnet variant selection at broadcast time** — The network string `"test"` flows unchanged through PSBT parsing and signing (trezorlib only needs "Bitcoin" vs "Testnet"). The testnet variant (testnet3, testnet4, signet) only matters for broadcasting and block explorer links. When `network == "test"`, the Result screen shows three broadcast buttons (Testnet4 as primary, Testnet3, Signet). The user's choice is passed as `targetNetwork` through `ViewModel.broadcast()` → `PythonBridge.broadcast()` → `broadcaster.py`, and persisted via `InboxDao.updateBroadcast()` so reopened inbox items show the correct explorer link. `"test"` is kept as a backward-compat alias for testnet3 in `broadcaster.py` and `MempoolUrl.kt`. `broadcaster.py` raises `ValueError` for unrecognized network values and validates `raw_hex` (hex encoding, even length, 400KB size limit).
+- **Testnet variant selection at broadcast time** — The network string `"test"` flows unchanged through PSBT parsing and signing (trezorlib only needs "Bitcoin" vs "Testnet"). The testnet variant (testnet3, testnet4, signet) only matters for broadcasting and block explorer links. When `network == "test"`, the Result screen shows three broadcast buttons (Testnet4 as primary, Testnet3, Signet). The user's choice is passed as `targetNetwork` through `ViewModel.broadcast()` → `TransactionBroadcaster.broadcast()` → OkHttp POST, and persisted via `InboxDao.updateBroadcast()` so reopened inbox items show the correct explorer link. `"test"` is kept as a backward-compat alias for testnet3 in `MempoolUrl.kt`. `TransactionBroadcaster` throws `IllegalArgumentException` for unrecognized network values and validates `raw_hex` (hex encoding, even length, 400KB size limit).
 
 ## Development Practices
 
