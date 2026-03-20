@@ -27,14 +27,15 @@ import javax.crypto.spec.SecretKeySpec
 class NostrReceiverTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val keyManager = NostrKeyManager(context)
+    private lateinit var keyManager: NostrKeyManager
     private val secp = Secp256k1.get()
     private lateinit var mockServer: MockWebServer
     private var activeReceiver: NostrReceiver? = null
 
     @Before
     fun setUp() {
-        context.getSharedPreferences("nostr_keys", 0).edit().clear().apply()
+        context.deleteSharedPreferences("nostr_keys_encrypted")
+        keyManager = NostrKeyManager(context)
         // Pre-generate the keypair before any concurrent access.
         // Without this, receiver's onOpen and mock server's onOpen race to call
         // getOrCreateKeyPair(), each generating a different random key.
@@ -49,7 +50,7 @@ class NostrReceiverTest {
         activeReceiver?.disconnect()
         activeReceiver = null
         try { mockServer.shutdown() } catch (_: Exception) { }
-        context.getSharedPreferences("nostr_keys", 0).edit().clear().apply()
+        context.deleteSharedPreferences("nostr_keys_encrypted")
     }
 
     @Test
