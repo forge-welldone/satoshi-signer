@@ -1,6 +1,5 @@
 # TODO
 
-- Consider moveing broadcasting out of python backend
 - New Screenshots
 - Licence
 - Static web site (github pages)
