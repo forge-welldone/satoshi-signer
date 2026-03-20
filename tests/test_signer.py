@@ -17,6 +17,7 @@ from remotesigner.signer import (
     is_p2sh,
     is_witness,
     _input_script_type_to_output,
+    _is_psbt_fully_signed,
     _is_relative_path,
     _parse_account_path,
     _node_fingerprint,
@@ -1046,3 +1047,333 @@ class TestSignPsbtCancellation:
 
         assert result["status"] == "error"
         assert "USB device disconnected" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# Test _is_psbt_fully_signed
+# ---------------------------------------------------------------------------
+
+class _FakeScript:
+    """Minimal stand-in for embit.script.Script (just holds .data)."""
+    def __init__(self, data: bytes):
+        self.data = data
+
+
+class _FakeInputScope:
+    """Minimal duck-type for embit InputScope used by _is_psbt_fully_signed."""
+    def __init__(self, partial_sigs=None, tap_key_sig=None,
+                 witness_script=None, redeem_script=None):
+        self.unknown = {}
+        self.partial_sigs = partial_sigs or {}
+        self.witness_script = None
+        self.redeem_script = None
+        if tap_key_sig is not None:
+            self.unknown[b"\x13"] = tap_key_sig
+        if witness_script is not None:
+            self.witness_script = _FakeScript(witness_script)
+        if redeem_script is not None:
+            self.redeem_script = _FakeScript(redeem_script)
+
+
+class _FakePsbt:
+    """Minimal duck-type for embit PSBT used by _is_psbt_fully_signed."""
+    def __init__(self, inputs):
+        self.inputs = list(inputs)
+
+
+class TestIsPsbtFullySigned:
+    """Direct unit tests for _is_psbt_fully_signed.
+
+    Three code paths: taproot key-path, multisig threshold, single-sig ECDSA.
+    """
+
+    # -- Taproot key-path (PSBT_IN_TAP_KEY_SIG = 0x13) --------------------
+
+    def test_taproot_keypath_signed(self):
+        """Input with taproot key-path signature is considered signed."""
+        inp = _FakeInputScope(tap_key_sig=b"\xab" * 64)
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_taproot_keypath_no_sig(self):
+        """Input without any signature is not signed."""
+        inp = _FakeInputScope()
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    def test_taproot_multiple_inputs_all_signed(self):
+        """Multiple taproot inputs all signed."""
+        inp1 = _FakeInputScope(tap_key_sig=b"\xab" * 64)
+        inp2 = _FakeInputScope(tap_key_sig=b"\xcd" * 64)
+        psbt = _FakePsbt([inp1, inp2])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_taproot_multiple_inputs_one_unsigned(self):
+        """Multiple taproot inputs, one missing signature → not fully signed."""
+        inp1 = _FakeInputScope(tap_key_sig=b"\xab" * 64)
+        inp2 = _FakeInputScope()
+        psbt = _FakePsbt([inp1, inp2])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    # -- Single-sig ECDSA (partial_sigs) -----------------------------------
+
+    def test_single_sig_ecdsa_signed(self):
+        """Single-sig input with one partial_sig is signed."""
+        pub = b"\x02" + b"\x01" * 32
+        inp = _FakeInputScope(partial_sigs={pub: b"\x30" + b"\x00" * 70})
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_single_sig_ecdsa_unsigned(self):
+        """Single-sig input with no partial_sigs is not signed."""
+        inp = _FakeInputScope()
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    def test_single_sig_multiple_inputs(self):
+        """Multiple single-sig inputs, all signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        inp1 = _FakeInputScope(partial_sigs={pub1: b"\x30" * 71})
+        inp2 = _FakeInputScope(partial_sigs={pub2: b"\x30" * 71})
+        psbt = _FakePsbt([inp1, inp2])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_single_sig_one_unsigned(self):
+        """Multiple single-sig inputs, one missing signature → not fully signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        inp1 = _FakeInputScope(partial_sigs={pub1: b"\x30" * 71})
+        inp2 = _FakeInputScope()
+        psbt = _FakePsbt([inp1, inp2])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    # -- Multisig threshold (witness_script) --------------------------------
+
+    def test_multisig_2of3_fully_signed(self):
+        """2-of-3 multisig with 2 signatures is fully signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_script = _make_multisig_script([pub1, pub2, pub3], m=2)
+        inp = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71, pub2: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_multisig_2of3_one_sig_partial(self):
+        """2-of-3 multisig with only 1 signature is partial."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_script = _make_multisig_script([pub1, pub2, pub3], m=2)
+        inp = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    def test_multisig_2of3_zero_sigs(self):
+        """2-of-3 multisig with 0 signatures is not signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_script = _make_multisig_script([pub1, pub2, pub3], m=2)
+        inp = _FakeInputScope(witness_script=ms_script)
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    def test_multisig_1of2_signed(self):
+        """1-of-2 multisig with 1 signature is fully signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        ms_script = _make_multisig_script([pub1, pub2], m=1)
+        inp = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_multisig_3of3_needs_all(self):
+        """3-of-3 multisig needs all 3 signatures."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_script = _make_multisig_script([pub1, pub2, pub3], m=3)
+        # Only 2 sigs → partial
+        inp = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71, pub2: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    def test_multisig_3of3_fully_signed(self):
+        """3-of-3 multisig with all 3 signatures is fully signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_script = _make_multisig_script([pub1, pub2, pub3], m=3)
+        inp = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={
+                pub1: b"\x30" * 71,
+                pub2: b"\x30" * 71,
+                pub3: b"\x30" * 71,
+            },
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_multisig_excess_sigs_ok(self):
+        """2-of-3 multisig with 3 signatures (more than m) is still fully signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_script = _make_multisig_script([pub1, pub2, pub3], m=2)
+        inp = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={
+                pub1: b"\x30" * 71,
+                pub2: b"\x30" * 71,
+                pub3: b"\x30" * 71,
+            },
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    # -- Multisig via redeem_script (bare P2SH, not P2SH-P2WSH) -----------
+
+    def test_multisig_redeem_script_p2sh(self):
+        """Multisig in redeem_script (bare P2SH) is recognized."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        ms_script = _make_multisig_script([pub1, pub2], m=2)
+        inp = _FakeInputScope(
+            redeem_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71, pub2: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_multisig_redeem_script_partial(self):
+        """Multisig in redeem_script with insufficient sigs is partial."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        ms_script = _make_multisig_script([pub1, pub2], m=2)
+        inp = _FakeInputScope(
+            redeem_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    def test_p2sh_p2wsh_witness_program_skipped(self):
+        """P2SH-P2WSH: redeem_script is a witness program → not treated as multisig.
+
+        The witness_script field should contain the actual multisig script.
+        When redeem_script is just a witness program (OP_0 <32-byte hash>),
+        it should be ignored for multisig detection.
+        """
+        # OP_0 PUSH(32) <hash> — a witness program v0
+        witness_program = b"\x00\x20" + b"\xaa" * 32
+        pub1 = b"\x02" + b"\x01" * 32
+        inp = _FakeInputScope(
+            redeem_script=witness_program,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        # Falls through to single-sig path → 1 partial_sig is enough
+        assert _is_psbt_fully_signed(psbt) is True
+
+    # -- witness_script takes priority over redeem_script ------------------
+
+    def test_witness_script_priority_over_redeem(self):
+        """witness_script multisig takes priority over redeem_script."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        pub3 = b"\x02" + b"\x03" * 32
+        ms_2of3 = _make_multisig_script([pub1, pub2, pub3], m=2)
+        ms_1of2 = _make_multisig_script([pub1, pub2], m=1)
+        # witness_script says 2-of-3, redeem_script says 1-of-2
+        inp = _FakeInputScope(
+            witness_script=ms_2of3,
+            redeem_script=ms_1of2,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        # Only 1 sig but m=2 from witness_script → partial
+        assert _is_psbt_fully_signed(psbt) is False
+
+    # -- Mixed input types -------------------------------------------------
+
+    def test_mixed_taproot_and_singlesig(self):
+        """PSBT with both taproot and single-sig inputs, all signed."""
+        pub = b"\x02" + b"\x01" * 32
+        inp_tr = _FakeInputScope(tap_key_sig=b"\xab" * 64)
+        inp_ss = _FakeInputScope(partial_sigs={pub: b"\x30" * 71})
+        psbt = _FakePsbt([inp_tr, inp_ss])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_mixed_taproot_and_multisig(self):
+        """PSBT with taproot and multisig inputs, all signed."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        ms_script = _make_multisig_script([pub1, pub2], m=2)
+        inp_tr = _FakeInputScope(tap_key_sig=b"\xab" * 64)
+        inp_ms = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71, pub2: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp_tr, inp_ms])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_mixed_multisig_partial_blocks_all(self):
+        """One partial multisig input blocks the whole PSBT."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        ms_script = _make_multisig_script([pub1, pub2], m=2)
+        inp_tr = _FakeInputScope(tap_key_sig=b"\xab" * 64)
+        inp_ms = _FakeInputScope(
+            witness_script=ms_script,
+            partial_sigs={pub1: b"\x30" * 71},  # only 1 of 2
+        )
+        psbt = _FakePsbt([inp_tr, inp_ms])
+        assert _is_psbt_fully_signed(psbt) is False
+
+    # -- Edge cases --------------------------------------------------------
+
+    def test_empty_psbt_no_inputs(self):
+        """PSBT with no inputs is trivially fully signed."""
+        psbt = _FakePsbt([])
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_short_script_not_multisig(self):
+        """A witness_script shorter than 37 bytes is not treated as multisig."""
+        # Short script ending with OP_CHECKMULTISIG
+        short_script = bytes([0x52, 0xAE])
+        pub1 = b"\x02" + b"\x01" * 32
+        inp = _FakeInputScope(
+            witness_script=short_script,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        # Falls through to single-sig path
+        assert _is_psbt_fully_signed(psbt) is True
+
+    def test_script_without_checkmultisig_not_multisig(self):
+        """A witness_script not ending with OP_CHECKMULTISIG → single-sig path."""
+        pub1 = b"\x02" + b"\x01" * 32
+        pub2 = b"\x02" + b"\x02" * 32
+        # Build a 37+ byte script that does NOT end with 0xAE
+        non_ms_script = b"\x52" + bytes([0x21]) + pub1 + bytes([0x51, 0xAC])
+        inp = _FakeInputScope(
+            witness_script=non_ms_script,
+            partial_sigs={pub1: b"\x30" * 71},
+        )
+        psbt = _FakePsbt([inp])
+        # Falls through to single-sig path
+        assert _is_psbt_fully_signed(psbt) is True

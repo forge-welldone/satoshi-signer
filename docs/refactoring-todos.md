@@ -213,13 +213,15 @@
 
 ---
 
-### 13. 🧪 Add direct tests for _is_psbt_fully_signed
+### ~~13. 🧪 Add direct tests for _is_psbt_fully_signed~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | New test cases in `tests/test_signer.py` |
 | **Consensus** | Python Engineer |
 
-This critical function determines broadcast-readiness. Three code paths (taproot key-path, multisig threshold, single-sig ECDSA) — none have direct unit tests.
+~~This critical function determines broadcast-readiness. Three code paths (taproot key-path, multisig threshold, single-sig ECDSA) — none have direct unit tests.~~
+
+**Fixed:** 25 direct unit tests added in `TestIsPsbtFullySigned` covering all three code paths: taproot key-path (PSBT_IN_TAP_KEY_SIG), multisig threshold (2-of-3, 1-of-2, 3-of-3, excess sigs), and single-sig ECDSA. Also covers: witness_script vs redeem_script priority, P2SH-P2WSH witness program bypass, bare P2SH multisig, mixed input types, and edge cases (empty PSBT, short scripts, non-multisig witness scripts).
 
 ---
 
