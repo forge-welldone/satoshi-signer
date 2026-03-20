@@ -301,15 +301,17 @@
 
 ---
 
-### 20. AppState.Result ByteArray equality issue
+### ~~20. AppState.Result ByteArray equality issue~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `viewmodel/SignerViewModel.kt:73` |
 | **Consensus** | Android Engineer |
 
-`AppState.Result` is a data class with `ByteArray` field. Data class `equals()`/`hashCode()` use reference equality for arrays, causing unnecessary recompositions.
+~~`AppState.Result` is a data class with `ByteArray` field. Data class `equals()`/`hashCode()` use reference equality for arrays, causing unnecessary recompositions.~~
 
-**Fix:** Override `equals`/`hashCode` or wrap `ByteArray` in an inline class with structural equality.
+~~**Fix:** Override `equals`/`hashCode` or wrap `ByteArray` in an inline class with structural equality.~~
+
+**Fixed:** Overrode `equals()` and `hashCode()` in `AppState.Result` to use `contentEquals()`/`contentHashCode()` for the `updatedPsbt` ByteArray field. 5 unit tests added covering: content equality across different references, consistent hashCode, different content inequality, null vs non-null, and both-null equality.
 
 ---
 

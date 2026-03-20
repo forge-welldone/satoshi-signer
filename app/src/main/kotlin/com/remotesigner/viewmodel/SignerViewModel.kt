@@ -57,7 +57,30 @@ sealed class AppState {
         val broadcastStatus: String? = null,
         val errorMessage: String? = null,
         val network: String = "main",
-    ) : AppState()
+    ) : AppState() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Result) return false
+            return isComplete == other.isComplete &&
+                txid == other.txid &&
+                rawHex == other.rawHex &&
+                updatedPsbt.contentEquals(other.updatedPsbt) &&
+                broadcastStatus == other.broadcastStatus &&
+                errorMessage == other.errorMessage &&
+                network == other.network
+        }
+
+        override fun hashCode(): Int {
+            var result = isComplete.hashCode()
+            result = 31 * result + (txid?.hashCode() ?: 0)
+            result = 31 * result + (rawHex?.hashCode() ?: 0)
+            result = 31 * result + (updatedPsbt?.contentHashCode() ?: 0)
+            result = 31 * result + (broadcastStatus?.hashCode() ?: 0)
+            result = 31 * result + (errorMessage?.hashCode() ?: 0)
+            result = 31 * result + network.hashCode()
+            return result
+        }
+    }
     data class Error(val message: String) : AppState()
     data object Contacts : AppState()
     data object EncryptPassphrase : AppState()

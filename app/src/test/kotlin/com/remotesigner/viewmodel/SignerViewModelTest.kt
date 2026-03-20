@@ -914,4 +914,59 @@ class SignerViewModelTest {
         assertFalse(vm.nfcWaitingForTag.value)
         assertNull(vm.nfcTagResult.value)
     }
+
+    // ===== AppState.Result ByteArray equality =====
+
+    @Test
+    fun `Result equals compares ByteArray by content not reference`() {
+        val a = AppState.Result(
+            isComplete = false,
+            updatedPsbt = byteArrayOf(1, 2, 3),
+        )
+        val b = AppState.Result(
+            isComplete = false,
+            updatedPsbt = byteArrayOf(1, 2, 3),
+        )
+        assertEquals(a, b)
+    }
+
+    @Test
+    fun `Result hashCode is consistent for same ByteArray content`() {
+        val a = AppState.Result(
+            isComplete = false,
+            updatedPsbt = byteArrayOf(1, 2, 3),
+        )
+        val b = AppState.Result(
+            isComplete = false,
+            updatedPsbt = byteArrayOf(1, 2, 3),
+        )
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun `Result with different ByteArray content is not equal`() {
+        val a = AppState.Result(
+            isComplete = false,
+            updatedPsbt = byteArrayOf(1, 2, 3),
+        )
+        val b = AppState.Result(
+            isComplete = false,
+            updatedPsbt = byteArrayOf(4, 5, 6),
+        )
+        assertFalse(a == b)
+    }
+
+    @Test
+    fun `Result with null vs non-null ByteArray is not equal`() {
+        val a = AppState.Result(isComplete = false, updatedPsbt = null)
+        val b = AppState.Result(isComplete = false, updatedPsbt = byteArrayOf(1, 2, 3))
+        assertFalse(a == b)
+    }
+
+    @Test
+    fun `Result with both null ByteArray is equal`() {
+        val a = AppState.Result(isComplete = true, rawHex = "0200", network = "test")
+        val b = AppState.Result(isComplete = true, rawHex = "0200", network = "test")
+        assertEquals(a, b)
+    }
 }
