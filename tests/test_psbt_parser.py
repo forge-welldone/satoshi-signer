@@ -170,35 +170,61 @@ class TestParseMultisigPsbt:
         assert result["network"] == "main"
 
 
-OP_RETURN_PSBT_PATH = os.path.join(PSBTS_DIR, "aa_cold3_watch-f1516d7b.psbt")
-
-
-@pytest.mark.skipif(
-    not os.path.exists(OP_RETURN_PSBT_PATH),
-    reason="OP_RETURN PSBT fixture not present",
-)
 class TestParseOpReturnPsbt:
     """Tests for OP_RETURN output detection and text extraction."""
 
     @pytest.fixture
     def psbt_bytes(self):
-        with open(OP_RETURN_PSBT_PATH, "rb") as f:
-            return f.read()
+        """Build a single-sig PSBT with an OP_RETURN output."""
+        from embit.psbt import PSBT, DerivationPath
+        from embit.transaction import Transaction, TransactionInput, TransactionOutput
+        from embit.script import Script, p2wpkh
+        from embit import ec
+        from io import BytesIO
+        import hashlib
+
+        key = ec.PrivateKey(hashlib.sha256(b"op-return-fixture-key").digest())
+        pub = key.get_public_key()
+
+        # OP_RETURN script: 0x6a + push_len + UTF-8 text
+        text = "Synthetic PSBT fixture"
+        payload = text.encode("utf-8")
+        op_return_script = Script(b'\x6a' + bytes([len(payload)]) + payload)
+
+        fake_txid = hashlib.sha256(b"op-return-fixture-prevtx").digest()
+        tx = Transaction(
+            version=2,
+            vin=[TransactionInput(fake_txid, 0, sequence=0xfffffffd)],
+            vout=[
+                TransactionOutput(0, op_return_script),
+                TransactionOutput(49000, p2wpkh(pub)),
+            ],
+            locktime=0,
+        )
+
+        psbt = PSBT(tx)
+        psbt.inputs[0].witness_utxo = TransactionOutput(50000, p2wpkh(pub))
+
+        HARDENED = 0x80000000
+        fp = bytes([0xaa, 0xbb, 0xcc, 0xdd])
+        path = [84 | HARDENED, 0 | HARDENED, 0 | HARDENED, 0, 0]
+        psbt.inputs[0].bip32_derivations[pub] = DerivationPath(fp, path)
+
+        buf = BytesIO()
+        psbt.write_to(buf)
+        return buf.getvalue()
 
     def test_detects_op_return_output(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
-        op_return_out = result["outputs"][0]
-        assert op_return_out["op_return"] == "Your ad here - https://aads.com/"
+        assert result["outputs"][0]["op_return"] == "Synthetic PSBT fixture"
 
-    def test_op_return_output_amount_is_zero(self, psbt_bytes):
+    def test_op_return_amount_is_zero(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
-        op_return_out = result["outputs"][0]
-        assert op_return_out["amount"] == 0
+        assert result["outputs"][0]["amount"] == 0
 
-    def test_non_op_return_output_has_no_op_return_field(self, psbt_bytes):
+    def test_non_op_return_output_has_no_field(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
-        change_out = result["outputs"][1]
-        assert "op_return" not in change_out
+        assert "op_return" not in result["outputs"][1]
 
 
 SINGLESIG_TESTNET_PATH = os.path.join(PSBTS_DIR, "singlesig_testnet3.psbt")
