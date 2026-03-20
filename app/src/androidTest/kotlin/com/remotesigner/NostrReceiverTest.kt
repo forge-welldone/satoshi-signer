@@ -222,6 +222,242 @@ class NostrReceiverTest {
         assertEquals(1, received.size)
     }
 
+    // ===== handleMessage tests (issue #16): malformed events, invalid NIP-04, dedup =====
+
+    @Test
+    fun handleMessage_ignoresNoticeAndEoseMessages() {
+        val items = sendMessagesExpectingSentinel(
+            """["NOTICE","Rate limited"]""",
+            """["EOSE","psbt-inbox"]""",
+        )
+        assertEquals("Only sentinel should arrive", 1, items.size)
+        assertEquals("Sentinel", items[0].label)
+    }
+
+    @Test
+    fun handleMessage_ignoresEventsWithMissingFields() {
+        // EVENT with incomplete JSON — fromRelayMessage returns null
+        val incomplete = """["EVENT","psbt-inbox",{"id":"${"a".repeat(64)}"}]"""
+        val items = sendMessagesExpectingSentinel(incomplete)
+        assertEquals("Only sentinel should arrive", 1, items.size)
+        assertEquals("Sentinel", items[0].label)
+    }
+
+    @Test
+    fun handleMessage_ignoresNonKind4Events() {
+        val kind1Event = createEventWithKind(1)
+        val items = sendMessagesExpectingSentinel(
+            """["EVENT","psbt-inbox",$kind1Event]"""
+        )
+        assertEquals("Only sentinel should arrive", 1, items.size)
+        assertEquals("Sentinel", items[0].label)
+    }
+
+    @Test
+    fun handleMessage_dropsEventWithInvalidNip04Content() {
+        // Event with valid ID but content is not NIP-04 format (no ?iv= separator)
+        val badEvent = createEventWithRawContent("not-encrypted-content")
+        val items = sendMessagesExpectingSentinel(
+            """["EVENT","psbt-inbox",$badEvent]"""
+        )
+        assertEquals("Only sentinel should arrive", 1, items.size)
+        assertEquals("Sentinel", items[0].label)
+    }
+
+    @Test
+    fun handleMessage_dropsEventWhenDecryptedPayloadIsNotJson() {
+        val badEvent = createEncryptedEventWithPayload(keyManager, "this is not json")
+        val items = sendMessagesExpectingSentinel(
+            """["EVENT","psbt-inbox",$badEvent]"""
+        )
+        assertEquals("Only sentinel should arrive", 1, items.size)
+        assertEquals("Sentinel", items[0].label)
+    }
+
+    @Test
+    fun handleMessage_dropsEventWhenPayloadMissingTxField() {
+        val badEvent = createEncryptedEventWithPayload(keyManager, """{"label":"no tx here"}""")
+        val items = sendMessagesExpectingSentinel(
+            """["EVENT","psbt-inbox",$badEvent]"""
+        )
+        assertEquals("Only sentinel should arrive", 1, items.size)
+        assertEquals("Sentinel", items[0].label)
+    }
+
+    @Test
+    fun handleMessage_skipsPreSeededEventIds() {
+        val validEvent = createTestEvent(keyManager)
+        val eventId = JSONObject(validEvent).getString("id")
+
+        val received = CopyOnWriteArrayList<InboxItemEntity>()
+        val sentinelLatch = CountDownLatch(1)
+        val receiver = NostrReceiver(
+            keyManager = keyManager,
+            onItem = {
+                received.add(it)
+                if (it.label == "Sentinel") sentinelLatch.countDown()
+            },
+            scope = CoroutineScope(Dispatchers.IO),
+        ).also { activeReceiver = it }
+
+        // Pre-seed the event ID — simulates startup seeding from Room
+        receiver.seedSeenIds(setOf(eventId))
+
+        val sentinelEvent = createTestEvent(keyManager, "Sentinel")
+        mockServer.enqueue(MockResponse().withWebSocketUpgrade(
+            object : okhttp3.WebSocketListener() {
+                override fun onOpen(webSocket: okhttp3.WebSocket, response: okhttp3.Response) {
+                    webSocket.send("""["EVENT","psbt-inbox",$validEvent]""")
+                    webSocket.send("""["EVENT","psbt-inbox",$sentinelEvent]""")
+                }
+            }
+        ))
+        mockServer.start()
+
+        receiver.connectToRelays(listOf(mockServer.url("/").toString().replace("http://", "ws://")))
+        assertTrue("Sentinel should arrive within 5s", sentinelLatch.await(5, TimeUnit.SECONDS))
+
+        assertEquals("Pre-seeded event should be skipped", 1, received.size)
+        assertEquals("Sentinel", received[0].label)
+    }
+
+    // ===== Helpers =====
+
+    /**
+     * Send messages through MockWebServer, followed by a valid sentinel event.
+     * Returns the list of items received. The sentinel (label="Sentinel") gates
+     * the latch, so by the time it arrives all prior messages have been processed.
+     */
+    private fun sendMessagesExpectingSentinel(vararg messages: String): List<InboxItemEntity> {
+        val received = CopyOnWriteArrayList<InboxItemEntity>()
+        val sentinelLatch = CountDownLatch(1)
+        val receiver = NostrReceiver(
+            keyManager = keyManager,
+            onItem = {
+                received.add(it)
+                if (it.label == "Sentinel") sentinelLatch.countDown()
+            },
+            scope = CoroutineScope(Dispatchers.IO),
+        ).also { activeReceiver = it }
+
+        val sentinelEvent = createTestEvent(keyManager, "Sentinel")
+        mockServer.enqueue(MockResponse().withWebSocketUpgrade(
+            object : okhttp3.WebSocketListener() {
+                override fun onOpen(webSocket: okhttp3.WebSocket, response: okhttp3.Response) {
+                    messages.forEach { webSocket.send(it) }
+                    webSocket.send("""["EVENT","psbt-inbox",$sentinelEvent]""")
+                }
+            }
+        ))
+        mockServer.start()
+
+        receiver.connectToRelays(listOf(mockServer.url("/").toString().replace("http://", "ws://")))
+        assertTrue("Sentinel event should arrive within 5s", sentinelLatch.await(5, TimeUnit.SECONDS))
+        return received.toList()
+    }
+
+    /**
+     * Create a kind-4 event with arbitrary (non-encrypted) content and valid ID.
+     * Passes ID verification but NIP-04 decryption will fail.
+     */
+    private fun createEventWithRawContent(content: String): String {
+        val senderPriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val senderPub = secp.pubkeyCreate(senderPriv)
+        val senderPubXOnly = senderPub.copyOfRange(1, 33)
+        val (_, receiverPub) = keyManager.getOrCreateKeyPair()
+
+        val pubHex = senderPubXOnly.toHex()
+        val recvHex = receiverPub.toHex()
+        val createdAt = System.currentTimeMillis() / 1000
+
+        val canonical = """[0,"$pubHex",$createdAt,4,[["p","$recvHex"]],"${content.replace("\"", "\\\"")}"]"""
+        val id = MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray()).toHex()
+
+        return JSONObject().apply {
+            put("id", id)
+            put("pubkey", pubHex)
+            put("created_at", createdAt)
+            put("kind", 4)
+            put("tags", JSONArray().apply {
+                put(JSONArray().apply { put("p"); put(recvHex) })
+            })
+            put("content", content)
+            put("sig", "0".repeat(128))
+        }.toString()
+    }
+
+    /**
+     * Create a kind-4 event with NIP-04 encrypted custom plaintext and valid ID.
+     * Decryption succeeds but payload parsing may fail depending on plaintext.
+     */
+    private fun createEncryptedEventWithPayload(km: NostrKeyManager, plaintext: String): String {
+        val senderPriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val senderPub = secp.pubkeyCreate(senderPriv)
+        val senderPubXOnly = senderPub.copyOfRange(1, 33)
+        val (_, receiverPub) = km.getOrCreateKeyPair()
+
+        val sharedSecret = Nip04.computeSharedSecret(senderPriv, receiverPub)
+        val iv = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(sharedSecret, "AES"), IvParameterSpec(iv))
+        val ciphertext = cipher.doFinal(plaintext.toByteArray())
+        val content = Base64.encodeToString(ciphertext, Base64.NO_WRAP) +
+            "?iv=" + Base64.encodeToString(iv, Base64.NO_WRAP)
+
+        val pubHex = senderPubXOnly.toHex()
+        val recvHex = receiverPub.toHex()
+        val createdAt = System.currentTimeMillis() / 1000
+
+        val canonical = """[0,"$pubHex",$createdAt,4,[["p","$recvHex"]],"${content.replace("\"", "\\\"")}"]"""
+        val id = MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray()).toHex()
+
+        return JSONObject().apply {
+            put("id", id)
+            put("pubkey", pubHex)
+            put("created_at", createdAt)
+            put("kind", 4)
+            put("tags", JSONArray().apply {
+                put(JSONArray().apply { put("p"); put(recvHex) })
+            })
+            put("content", content)
+            put("sig", "0".repeat(128))
+        }.toString()
+    }
+
+    /**
+     * Create an event with valid ID and specified kind (non-kind-4).
+     * Passes ID verification but is filtered by the kind check.
+     */
+    private fun createEventWithKind(kind: Int): String {
+        val senderPriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val senderPub = secp.pubkeyCreate(senderPriv)
+        val senderPubXOnly = senderPub.copyOfRange(1, 33)
+        val (_, receiverPub) = keyManager.getOrCreateKeyPair()
+
+        val pubHex = senderPubXOnly.toHex()
+        val recvHex = receiverPub.toHex()
+        val createdAt = System.currentTimeMillis() / 1000
+        val content = "Hello world"
+
+        val canonical = """[0,"$pubHex",$createdAt,$kind,[["p","$recvHex"]],"$content"]"""
+        val id = MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray()).toHex()
+
+        return JSONObject().apply {
+            put("id", id)
+            put("pubkey", pubHex)
+            put("created_at", createdAt)
+            put("kind", kind)
+            put("tags", JSONArray().apply {
+                put(JSONArray().apply { put("p"); put(recvHex) })
+            })
+            put("content", content)
+            put("sig", "0".repeat(128))
+        }.toString()
+    }
+
     /**
      * Create a test event where the ID is computed like Python/aionostr does it —
      * without escaping forward slashes. This is what real relay events look like.
@@ -267,7 +503,7 @@ class NostrReceiverTest {
     /**
      * Create a valid NIP-04 encrypted Nostr kind 4 event targeting the given keyManager.
      */
-    private fun createTestEvent(km: NostrKeyManager): String {
+    private fun createTestEvent(km: NostrKeyManager, label: String = "Test payment"): String {
         val senderPriv = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val senderPub = secp.pubkeyCreate(senderPriv)            // 65-byte uncompressed
         val senderPubXOnly = senderPub.copyOfRange(1, 33)        // 32-byte x-coordinate
@@ -275,7 +511,7 @@ class NostrReceiverTest {
         val (_, receiverPub) = km.getOrCreateKeyPair()
 
         // NIP-04 encrypt
-        val payload = """{"tx": "cHNidA==", "label": "Test payment"}"""
+        val payload = """{"tx": "cHNidA==", "label": "$label"}"""
         val sharedSecret = Nip04.computeSharedSecret(senderPriv, receiverPub)
         val iv = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")

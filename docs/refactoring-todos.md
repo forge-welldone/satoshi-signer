@@ -249,13 +249,15 @@
 
 ---
 
-### 16. 🧪 Add NostrReceiver message handling tests
+### ~~16. 🧪 Add NostrReceiver message handling tests~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | Expand `app/src/androidTest/.../NostrReceiverTest.kt` |
 | **Consensus** | System Architect |
 
-`handleMessage` does event parsing, deduplication, NIP-04 decryption, and PSBT extraction. Should cover: malformed events, duplicate events, events with invalid NIP-04 content.
+~~`handleMessage` does event parsing, deduplication, NIP-04 decryption, and PSBT extraction. Should cover: malformed events, duplicate events, events with invalid NIP-04 content.~~
+
+**Fixed:** 7 handleMessage tests added using a sentinel-event pattern (no Thread.sleep). Covers: NOTICE/EOSE messages ignored, events with missing JSON fields dropped, non-kind-4 events filtered, invalid NIP-04 content dropped, non-JSON decrypted payload dropped, missing "tx" field dropped, and pre-seeded event IDs skipped via `seedSeenIds()`.
 
 ---
 
@@ -516,7 +518,7 @@ When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marke
 | ViewModel state machine | JVM unit tests | **High** | #6 (extract deps) |
 | `_is_psbt_fully_signed` | Python unit tests | **High** | None |
 | Signing error paths | Python unit tests | **Medium** | None |
-| NostrReceiver message handling | Instrumented tests | **Medium** | None |
+| ~~NostrReceiver message handling~~ | ~~Instrumented tests~~ | ~~**Medium**~~ | ~~Done (#16)~~ |
 | ContactsScreen UI | Instrumented UI tests | **Medium** | None |
 | Broadcast integration | Python integration tests | **Low** | None |
 | ~~Bech32 (move to JVM)~~ | ~~JVM unit tests~~ | ~~**Low**~~ | ~~Done (#15)~~ |
