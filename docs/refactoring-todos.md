@@ -283,17 +283,19 @@ What happens with: truncated PSBT? No matching fingerprint? Relative paths and n
 
 ---
 
-### 19. Fix StateFlow race conditions in ViewModel (partially fixed)
+### ~~19. Fix StateFlow race conditions in ViewModel (partially fixed)~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `viewmodel/SignerViewModel.kt` (lines 613, 506-531) |
 | **Consensus** | Android Engineer |
 
-`reEnrichSigners()` and `broadcast()` both read-modify-write `_state` non-atomically. Meanwhile other flows may also update state.
+~~`reEnrichSigners()` and `broadcast()` both read-modify-write `_state` non-atomically. Meanwhile other flows may also update state.~~
 
-**Partially fixed:** `goHome()` had a race where it read a stale `inboxItems` StateFlow snapshot (which hadn't yet propagated the `updateBroadcast` Room write) and overwrote BROADCAST status back to SIGNED. Fixed by checking the authoritative in-memory `AppState.Result.txid` instead of the stale Flow.
+~~**Partially fixed:** `goHome()` had a race where it read a stale `inboxItems` StateFlow snapshot (which hadn't yet propagated the `updateBroadcast` Room write) and overwrote BROADCAST status back to SIGNED. Fixed by checking the authoritative in-memory `AppState.Result.txid` instead of the stale Flow.~~
 
-**Remaining:** Use `_state.update { currentState -> ... }` (atomic update API on MutableStateFlow) instead of `val s = _state.value; _state.value = s.copy(...)` for `reEnrichSigners()` and `broadcast()`.
+~~**Remaining:** Use `_state.update { currentState -> ... }` (atomic update API on MutableStateFlow) instead of `val s = _state.value; _state.value = s.copy(...)` for `reEnrichSigners()` and `broadcast()`.~~
+
+**Fixed:** All read-modify-write patterns replaced with `_state.update { }` atomic API with type guards: `reEnrichSigners()`, `broadcast()` (all 4 write sites), and both progress callbacks in `signWithTrezor()`/`signWithBridge()`. Each update lambda checks the state type and becomes a no-op if it changed concurrently. 3 regression tests added.
 
 ---
 
