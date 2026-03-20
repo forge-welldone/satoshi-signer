@@ -315,7 +315,7 @@
 
 ---
 
-### 21. Nostr seenIds grows unboundedly
+### 21. Nostr seenIds grows unboundedly — WON'T FIX
 | | |
 |---|---|
 | **File** | `nostr/NostrReceiver.kt:47` |
@@ -323,7 +323,7 @@
 
 `seenIds` accumulates event IDs for the ViewModel lifetime. Long sessions could accumulate thousands.
 
-**Fix:** Use a bounded `LinkedHashSet` with max size check, or clear old IDs periodically.
+**Won't fix:** In practice, the app receives a handful of PSBTs per day via Nostr (kind 4 events tagged to our pubkey, 24h lookback). Even over months of continuous use, seenIds would hold hundreds of 64-char hex strings — a few KB. Room's `insertIgnore` already deduplicates at the database level, so seenIds is just a fast in-memory filter to skip redundant decryption. Bounding the set would introduce a tradeoff (evicted IDs cause redundant decryption work on relay re-delivery) to solve a problem that doesn't exist at this app's scale.
 
 ---
 
