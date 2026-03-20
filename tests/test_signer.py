@@ -1377,3 +1377,201 @@ class TestIsPsbtFullySigned:
         psbt = _FakePsbt([inp])
         # Falls through to single-sig path
         assert _is_psbt_fully_signed(psbt) is True
+
+
+# ---------------------------------------------------------------------------
+# Test sign_psbt negative paths
+# ---------------------------------------------------------------------------
+
+class TestSignPsbtNegativePaths:
+    """sign_psbt should return error status for various failure modes."""
+
+    def test_truncated_psbt_returns_error(self):
+        """Truncated PSBT (valid magic + garbage) returns error status."""
+        truncated = b"psbt\xff" + b"\x00\x01\x02"
+        mock_bridge = MagicMock()
+        result = sign_psbt(truncated, mock_bridge, network="test")
+        assert result["status"] == "error"
+        assert "message" in result
+
+    def test_empty_bytes_returns_error(self):
+        """Empty bytes returns error status."""
+        mock_bridge = MagicMock()
+        result = sign_psbt(b"", mock_bridge, network="test")
+        assert result["status"] == "error"
+        assert "message" in result
+
+    def test_not_psbt_bytes_returns_error(self):
+        """Arbitrary non-PSBT bytes returns error status."""
+        mock_bridge = MagicMock()
+        result = sign_psbt(b"not a psbt at all", mock_bridge, network="test")
+        assert result["status"] == "error"
+        assert "message" in result
+
+    def test_connection_failure_returns_error(self):
+        """USB transport failure returns error status."""
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport",
+                   side_effect=OSError("USB device not found")), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient"):
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "error"
+        assert "USB device not found" in result["message"]
+
+    def test_fingerprint_read_failure_returns_error(self):
+        """Failure reading master fingerprint returns error status."""
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient"), \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_btc.get_public_node.side_effect = RuntimeError(
+                "Device not initialized"
+            )
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "error"
+        assert "Device not initialized" in result["message"]
+
+    def test_relative_paths_no_callback_returns_error(self):
+        """PSBT with relative paths and no callback returns error status."""
+        mock_deriv = MagicMock()
+        mock_deriv.fingerprint = b"\xAB\xCD\xEF\x01"
+        mock_deriv.derivation = [0, 5]
+
+        mock_pub = MagicMock()
+        mock_pub.sec.return_value = b"\x02" + b"\xaa" * 32
+
+        mock_inp = MagicMock()
+        mock_inp.bip32_derivations = {mock_pub: mock_deriv}
+        mock_inp.taproot_bip32_derivations = {}
+        mock_inp.utxo.script_pubkey.data = b"\x00\x14" + b"\xab" * 20
+
+        mock_psbt = MagicMock()
+        mock_psbt.inputs = [mock_inp]
+        mock_psbt.outputs = []
+        mock_psbt.tx_version = 2
+        mock_psbt.locktime = 0
+
+        call_count = [0]
+        def gpn_side_effect(client, n=None, coin_name=None):
+            call_count[0] += 1
+            result = MagicMock()
+            if call_count[0] == 1:
+                result.root_fingerprint = 0xABCDEF01
+                result.node = MagicMock(public_key=b"\x02" + b"\xbb" * 32)
+            else:
+                result.node = MagicMock(public_key=b"\x02" + b"\xcc" * 32)
+            return result
+
+        with patch("remotesigner.signer.PSBT.parse", return_value=mock_psbt), \
+             patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient"), \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_btc.get_public_node.side_effect = gpn_side_effect
+            result = sign_psbt(b"dummy", MagicMock(), status_callback=None, network="test")
+
+        assert result["status"] == "error"
+        assert "relative derivation paths" in result["message"].lower()
+
+    def test_other_trezor_failure_code_returns_error(self):
+        """Non-cancellation TrezorFailure returns error, not cancelled."""
+        from trezorlib.exceptions import TrezorFailure
+        from trezorlib.messages import Failure, FailureType
+
+        failure = Failure(code=FailureType.UnexpectedMessage)
+
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient") as mock_client_cls, \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_client = mock_client_cls.return_value
+            mock_btc.get_public_node.return_value = MagicMock(
+                root_fingerprint=0x3442193E,
+                node=MagicMock(public_key=b"\x02" + b"\xff" * 32),
+            )
+            mock_btc.sign_tx.side_effect = TrezorFailure(failure)
+
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "error"
+        assert result["status"] != "cancelled"
+        assert "message" in result
+
+    def test_account_path_callback_error_returns_error(self):
+        """Callback raising during account path request returns error status."""
+        mock_deriv = MagicMock()
+        mock_deriv.fingerprint = b"\xAB\xCD\xEF\x01"
+        mock_deriv.derivation = [0, 5]
+
+        mock_pub = MagicMock()
+        mock_pub.sec.return_value = b"\x02" + b"\xaa" * 32
+
+        mock_inp = MagicMock()
+        mock_inp.bip32_derivations = {mock_pub: mock_deriv}
+        mock_inp.taproot_bip32_derivations = {}
+        mock_inp.utxo.script_pubkey.data = b"\x00\x14" + b"\xab" * 20
+
+        mock_psbt = MagicMock()
+        mock_psbt.inputs = [mock_inp]
+        mock_psbt.outputs = []
+        mock_psbt.tx_version = 2
+        mock_psbt.locktime = 0
+
+        call_count = [0]
+        def gpn_side_effect(client, n=None, coin_name=None):
+            call_count[0] += 1
+            result = MagicMock()
+            if call_count[0] == 1:
+                result.root_fingerprint = 0xABCDEF01
+                result.node = MagicMock(public_key=b"\x02" + b"\xbb" * 32)
+            else:
+                result.node = MagicMock(public_key=b"\x02" + b"\xcc" * 32)
+            return result
+
+        mock_callback = MagicMock()
+        mock_callback.requestAccountPath.side_effect = RuntimeError("User dismissed dialog")
+
+        with patch("remotesigner.signer.PSBT.parse", return_value=mock_psbt), \
+             patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient"), \
+             patch("remotesigner.signer.trezor_btc") as mock_btc:
+            mock_btc.get_public_node.side_effect = gpn_side_effect
+
+            result = sign_psbt(b"dummy", MagicMock(),
+                               status_callback=mock_callback, network="test")
+
+        assert result["status"] == "error"
+        assert "account path" in result["message"].lower()
+
+    def test_output_conversion_error_returns_error(self):
+        """ValueError from psbt_to_trezor_outputs flows through as error status."""
+        psbt_bytes = base64.b64decode(TEST_PSBT_B64)
+        mock_bridge = MagicMock()
+
+        with patch("remotesigner.signer.AndroidTransport"), \
+             patch("remotesigner.signer.AndroidTrezorUi"), \
+             patch("remotesigner.signer.TrezorClient"), \
+             patch("remotesigner.signer.trezor_btc") as mock_btc, \
+             patch("remotesigner.signer.psbt_to_trezor_outputs",
+                   side_effect=ValueError("Cannot derive address from scriptPubKey: deadbeef")):
+            mock_btc.get_public_node.return_value = MagicMock(
+                root_fingerprint=0x3442193E,
+                node=MagicMock(public_key=b"\x02" + b"\xff" * 32),
+            )
+
+            result = sign_psbt(psbt_bytes, mock_bridge, network="test")
+
+        assert result["status"] == "error"
+        assert "Cannot derive address" in result["message"]
