@@ -327,15 +327,17 @@
 
 ---
 
-### 22. Nostr private key in plaintext SharedPreferences
+### ~~22. Nostr private key in plaintext SharedPreferences~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `nostr/NostrKeyManager.kt:14` |
 | **Consensus** | System Architect |
 
-The Nostr secret key (used for NIP-04 PSBT decryption) is stored as hex in `SharedPreferences`. On rooted devices, another app could decrypt all incoming PSBTs.
+~~The Nostr secret key (used for NIP-04 PSBT decryption) is stored as hex in `SharedPreferences`. On rooted devices, another app could decrypt all incoming PSBTs.~~
 
-**Fix:** Use `EncryptedSharedPreferences` from Jetpack Security library.
+~~**Fix:** Use `EncryptedSharedPreferences` from Jetpack Security library.~~
+
+**Fixed:** Replaced `SharedPreferences` with `EncryptedSharedPreferences` (`androidx.security:security-crypto:1.1.0-alpha06`). Keys encrypted via Android Keystore (AES-256-GCM values, AES-256-SIV key names). Old plaintext prefs deleted on construction (no migration — key regenerates). Tests verify encrypted storage is not readable via plain `SharedPreferences` API.
 
 ---
 
