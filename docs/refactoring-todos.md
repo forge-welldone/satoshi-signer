@@ -273,13 +273,15 @@
 
 ---
 
-### 18. 🧪 Add negative-path Python signing tests
+### ~~18. 🧪 Add negative-path Python signing tests~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | Expand `tests/test_signer.py` |
 | **Consensus** | System Architect |
 
-What happens with: truncated PSBT? No matching fingerprint? Relative paths and no callback? These error paths need coverage.
+~~What happens with: truncated PSBT? No matching fingerprint? Relative paths and no callback? These error paths need coverage.~~
+
+**Fixed:** 11 negative-path tests added in `TestSignPsbtNegativePaths` (9 integration tests through `sign_psbt`) and `TestConversionNegativePaths` (2 direct unit tests). Covers: truncated/empty/invalid PSBT bytes, USB connection failure, fingerprint read failure, relative paths without callback, non-cancellation TrezorFailure codes, account path callback error, output conversion error, missing UTXO validation, and bad scriptPubKey address derivation.
 
 ---
 
@@ -521,7 +523,7 @@ When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marke
 |-----|-----------------|------------|------------|
 | ViewModel state machine | JVM unit tests | **High** | #6 (extract deps) |
 | `_is_psbt_fully_signed` | Python unit tests | **High** | None |
-| Signing error paths | Python unit tests | **Medium** | None |
+| ~~Signing error paths~~ | ~~Python unit tests~~ | ~~**Medium**~~ | ~~Done (#18)~~ |
 | ~~NostrReceiver message handling~~ | ~~Instrumented tests~~ | ~~**Medium**~~ | ~~Done (#16)~~ |
 | ~~ContactsScreen UI~~ | ~~Instrumented UI tests~~ | ~~**Medium**~~ | ~~Done (#17)~~ |
 | Broadcast integration | Python integration tests | **Low** | None |
