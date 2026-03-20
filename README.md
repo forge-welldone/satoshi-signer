@@ -54,10 +54,11 @@ Kotlin/Jetpack Compose                  Python backend (via Chaquopy)
 ┌──────────────────────────┐            ┌──────────────────────────┐
 │ UI Screens (7 screens)   │            │ psbt_parser (embit)      │
 │ SignerViewModel          │◄──bridge──►│ signer (trezorlib)       │
-│ ├─ ContactRepository     │            │ broadcaster (requests)   │
-│ ├─ InboxRepository       │            │ usb_transport (custom)   │
-│ ├─ SigningOrchestrator   │            │ trezor_ui (callbacks)    │
-│ USB Bridge (UsbRequest)  │            └──────────────────────────┘
+│ ├─ ContactRepository     │            │ usb_transport (custom)   │
+│ ├─ InboxRepository       │            │ trezor_ui (callbacks)    │
+│ ├─ SigningOrchestrator   │            └──────────────────────────┘
+│ ├─ TransactionBroadcaster│
+│ USB Bridge (UsbRequest)  │
 │ Nostr receiver (OkHttp)  │
 │ NFC reader / file picker │
 └──────────┬───────────────┘
@@ -68,7 +69,7 @@ Kotlin/Jetpack Compose                  Python backend (via Chaquopy)
      └───────────┘
 ```
 
-**Kotlin side** handles UI (Jetpack Compose), Android file picker, USB permission management, and interrupt endpoint I/O via `UsbRequest`. The `SignerViewModel` is a composition root that delegates to `ContactRepository` (contact CRUD), `InboxRepository` (Nostr inbox events), and `SigningOrchestrator` (USB lifecycle and Trezor signing). All Bitcoin and Trezor logic lives in Python.
+**Kotlin side** handles UI (Jetpack Compose), Android file picker, USB permission management, interrupt endpoint I/O via `UsbRequest`, and transaction broadcasting (via `TransactionBroadcaster` using OkHttp). The `SignerViewModel` is a composition root that delegates to `ContactRepository` (contact CRUD), `InboxRepository` (Nostr inbox events), `SigningOrchestrator` (USB lifecycle and Trezor signing), and `TransactionBroadcaster` (HTTP POST to mempool.space/blockstream.info). All Bitcoin and Trezor logic lives in Python.
 
 **Python side** uses `trezorlib` (official Trezor library) for device communication and `embit` for PSBT parsing. The PSBT-to-trezorlib conversion logic is ported from [HWI](https://github.com/bitcoin-core/HWI). A custom `trezorlib` transport bridges Android's USB stack to Python via Kotlin callbacks.
 
@@ -160,7 +161,7 @@ avdmanager create avd -n test_device \
 ./gradlew assembleDebug
 ```
 
-Chaquopy automatically downloads Python 3.13 and pip-installs `trezor`, `embit`, and `requests` during the build.
+Chaquopy automatically downloads Python 3.13 and pip-installs `trezor` and `embit` during the build.
 
 ### Install
 
@@ -220,6 +221,8 @@ app/src/main/
 │   │   ├── PythonBridgeInterface.kt # Interface + SigningCallback (enables test fakes)
 │   │   ├── PythonBridge.kt          # Chaquopy bridge to Python (implements interface)
 │   │   └── SigningOrchestrator.kt   # USB lifecycle, Trezor signing flow, callbacks
+│   ├── broadcast/
+│   │   └── TransactionBroadcaster.kt # HTTP broadcast to mempool.space/blockstream.info
 │   ├── viewmodel/
 │   │   ├── SignerViewModel.kt       # State machine (Home→Review→Sign→Result→Error)
 │   │   └── SignerViewModelFactory.kt # Dependency injection via ViewModelProvider.Factory
@@ -256,7 +259,6 @@ app/src/main/
 ├── python/remotesigner/
 │   ├── psbt_parser.py              # Parse PSBT, detect change outputs
 │   ├── signer.py                   # PSBT→trezorlib conversion + signing
-│   ├── broadcaster.py              # HTTP broadcast to public APIs
 │   ├── usb_transport.py            # Custom trezorlib Handle/Transport
 │   ├── trezor_ui.py                # Safe 3 UI callbacks
 │   └── validate_deps.py            # Dependency validation for Chaquopy
@@ -284,6 +286,7 @@ app/src/androidTest/kotlin/com/remotesigner/
 
 app/src/test/kotlin/com/remotesigner/
 ├── viewmodel/SignerViewModelTest.kt # ViewModel state machine (JVM, mockk)
+├── broadcast/TransactionBroadcasterTest.kt # Broadcaster tests (JVM, MockWebServer)
 ├── nostr/Bech32Test.kt             # Bech32 encoding/decoding (JVM)
 ├── nfc/NdefTextParserTest.kt       # NFC NDEF parsing (JVM, no emulator needed)
 ├── data/FingerprintValidatorTest.kt # Fingerprint validation (JVM)
@@ -303,7 +306,6 @@ tests/
 ├── test_signing_e2e.py             # E2E tests replaying recorded cassettes
 ├── test_psbt_parser.py             # PSBT parsing tests
 ├── test_signer.py                  # Signer module tests
-├── test_broadcaster.py             # Broadcasting tests
 ├── test_usb_transport.py           # USB transport tests
 ├── test_trezor_ui.py               # Trezor UI callback tests
 ├── test_desktop_bridge.py          # Desktop bridge unit tests
@@ -321,13 +323,12 @@ tests/
 ### Python (bundled via Chaquopy)
 - `trezor` 0.13.9 — Trezor device communication (protobuf, signing protocol)
 - `embit` — Lightweight Bitcoin library (PSBT parsing, transaction handling)
-- `requests` — HTTP client for broadcasting
 
 ### Kotlin/Android
 - Jetpack Compose with Material 3
 - Android USB Host API
 - Chaquopy 17.0.0
-- OkHttp 4.12.0 — WebSocket client for Nostr relay connections
+- OkHttp 4.12.0 — WebSocket client for Nostr relays + transaction broadcasting
 - secp256k1-kmp 0.22.0 — secp256k1 ECDH for NIP-04 encryption/decryption
 - ZXing 3.5.3 — QR code generation for npub display
 
