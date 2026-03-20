@@ -90,6 +90,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation("io.mockk:mockk:1.13.13")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.test.runner)
     debugImplementation(libs.compose.ui.test.manifest)
