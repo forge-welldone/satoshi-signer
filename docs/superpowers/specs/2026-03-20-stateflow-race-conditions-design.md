@@ -26,6 +26,12 @@ Replace all read-modify-write patterns with `_state.update { currentState -> ...
 
 This pattern is already used in `NostrReceiver.kt` in this codebase.
 
+## Implementation notes
+
+- Requires adding `import kotlinx.coroutines.flow.update` to `SignerViewModel.kt` (currently only `NostrReceiver.kt` has this import).
+- `goHome()` (line 442) was evaluated and is safe — it reads `_state.value` for database status decisions but immediately writes `AppState.Home`, so there's no stale-state-overwrite risk.
+- The database write in `broadcast()` (`inboxRepository.updateBroadcast`) uses `currentSigningInboxId` (a ViewModel field), not the stale `state` snapshot, so it doesn't suffer from this race.
+
 ## Changes
 
 ### 1. `reEnrichSigners()`
@@ -114,9 +120,9 @@ onProgress = { msg ->
 
 ### New tests
 
-1. **broadcast ignores completion when state changed** — start broadcast, set state to Home before async completion, verify Home state preserved.
-2. **reEnrichSigners is no-op when state changed** — trigger re-enrichment, change state to Home before update applies, verify Home state preserved.
-3. **progress callback is no-op when state changed** — simulate progress message arriving after signing completes (state is Result), verify Result state preserved.
+1. **broadcast completion preserves Home state when user navigated away during network call** — start broadcast, set state to Home before async completion, verify Home state preserved.
+2. **reEnrichSigners preserves Home state when user left TransactionReview during enrichment** — trigger re-enrichment, change state to Home before update applies, verify Home state preserved.
+3. **progress callback preserves Result state when signing already completed** — simulate progress message arriving after signing completes (state is Result), verify Result state preserved.
 
 ## Scope
 
