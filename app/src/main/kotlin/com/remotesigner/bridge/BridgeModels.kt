@@ -30,10 +30,3 @@ data class ParsedPsbtResult(
     val requiredSigs: Int = 0,
     val totalSigs: Int = 0,
 )
-
-data class BroadcastResult(
-    val status: String,
-    val txid: String? = null,
-    val message: String? = null,
-    val rawHex: String? = null,
-)

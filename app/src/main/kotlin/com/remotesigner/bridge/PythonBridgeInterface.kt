@@ -19,5 +19,4 @@ interface PythonBridgeInterface {
         callback: SigningCallback?,
         network: String = "main",
     ): Map<String, Any?>
-    fun broadcast(rawHex: String, network: String = "main"): BroadcastResult
 }
