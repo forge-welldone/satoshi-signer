@@ -61,26 +61,21 @@ def nip04_decrypt(our_privkey_bytes: bytes, their_xonly_bytes: bytes,
 def _ecdh(privkey_bytes: bytes, xonly_bytes: bytes) -> bytes:
     """NIP-04 ECDH shared secret: raw x-coordinate of privkey * pubkey.
 
-    Uses ecdsa (pure Python, from trezor deps) for manual point multiplication
-    so we get the raw x-coordinate — not the SHA-256 hash that libsecp256k1's
-    default ecdh function returns. Both sides (Python + Android) must agree
-    on the same shared secret derivation for NIP-04 compatibility.
+    Uses embit's secp256k1 bindings for point multiplication, then extracts
+    the raw x-coordinate. libsecp256k1's default ``ecdh()`` returns
+    SHA-256(compressed_shared_point), which is not what NIP-04 needs.
+    Both sides (Python + Android) must agree on the same shared secret
+    derivation for NIP-04 compatibility.
     """
-    from ecdsa import SECP256k1, SigningKey
-    from ecdsa.ellipticcurve import Point
+    import ctypes
+    from embit.util import ctypes_secp256k1 as secp
 
-    # Reconstruct public key with even y (NIP-04 convention: 0x02 prefix)
-    x = int.from_bytes(xonly_bytes, "big")
-    p = SECP256k1.curve.p()
-    y_sq = (pow(x, 3, p) + 7) % p
-    y = pow(y_sq, (p + 1) // 4, p)
-    if y % 2 != 0:
-        y = p - y
-
-    pubkey_point = Point(SECP256k1.curve, x, y)
-    sk = SigningKey.from_string(privkey_bytes, curve=SECP256k1)
-    shared_point = pubkey_point * sk.privkey.secret_multiplier
-    return shared_point.x().to_bytes(32, "big")
+    pubkey = ec.PublicKey.from_xonly(xonly_bytes)
+    # ec_pubkey_tweak_mul modifies the point in place — use a mutable buffer
+    point_buf = ctypes.create_string_buffer(pubkey._point, 64)
+    secp.ec_pubkey_tweak_mul(point_buf, privkey_bytes)
+    compressed = secp.ec_pubkey_serialize(point_buf.raw)
+    return compressed[1:33]  # x-coordinate from compressed pubkey
 
 
 def _pkcs7_pad(data: bytes, block_size: int = 16) -> bytes:

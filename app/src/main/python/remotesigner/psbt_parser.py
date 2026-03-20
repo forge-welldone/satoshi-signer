@@ -44,6 +44,7 @@ class ParseResult(TypedDict):
 
 
 PSBT_MAGIC = b"psbt\xff"
+MAX_PSBT_SIZE = 1_048_576  # 1 MB
 
 
 @dataclass
@@ -70,6 +71,11 @@ def parse_psbt(psbt_bytes: bytes, network: str = "main") -> ParseResult:
         ValueError: If the bytes are not a valid PSBT.
     """
     psbt_bytes = bytes(psbt_bytes)
+    if len(psbt_bytes) > MAX_PSBT_SIZE:
+        raise ValueError(
+            f"PSBT too large: {len(psbt_bytes)} bytes "
+            f"(max {MAX_PSBT_SIZE})"
+        )
     if not psbt_bytes.startswith(PSBT_MAGIC):
         raise ValueError("Invalid PSBT: missing magic bytes")
 

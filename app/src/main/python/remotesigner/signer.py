@@ -33,6 +33,7 @@ from trezorlib.messages import (
 from remotesigner.usb_transport import AndroidTransport
 from remotesigner.trezor_ui import AndroidTrezorUi
 from remotesigner.script_utils import parse_multisig_script as _parse_multisig
+from remotesigner.psbt_parser import MAX_PSBT_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -929,6 +930,12 @@ def sign_psbt(
         # Parse the PSBT
         _status("Parsing PSBT...")
         psbt_bytes = bytes(psbt_bytes)
+        if len(psbt_bytes) > MAX_PSBT_SIZE:
+            return {
+                "status": "error",
+                "message": f"PSBT too large: {len(psbt_bytes)} bytes "
+                           f"(max {MAX_PSBT_SIZE})",
+            }
         psbt = PSBT.parse(psbt_bytes)
 
         client, master_fp = _connect_and_get_fingerprint(

@@ -6,6 +6,7 @@ import com.remotesigner.nostr.*
 import fr.acinq.secp256k1.Secp256k1
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONArray
@@ -108,29 +109,36 @@ class NostrReceiverTest {
     @Test
     fun receiver_deduplicatesByEventId() {
         val received = CopyOnWriteArrayList<InboxItemEntity>()
-        val latch = CountDownLatch(1)
+        val sentinelLatch = CountDownLatch(1)
         val receiver = NostrReceiver(
             keyManager = keyManager,
-            onItem = { received.add(it); latch.countDown() },
+            onItem = {
+                received.add(it)
+                if (it.label == "Sentinel") sentinelLatch.countDown()
+            },
             scope = CoroutineScope(Dispatchers.IO),
         ).also { activeReceiver = it }
 
+        val sentinelEvent = createTestEvent(keyManager, "Sentinel")
         mockServer.enqueue(MockResponse().withWebSocketUpgrade(
             object : okhttp3.WebSocketListener() {
                 override fun onOpen(webSocket: okhttp3.WebSocket, response: okhttp3.Response) {
                     val event = createTestEvent(keyManager)
                     webSocket.send("""["EVENT","psbt-inbox",${event}]""")
                     webSocket.send("""["EVENT","psbt-inbox",${event}]""") // duplicate
+                    webSocket.send("""["EVENT","psbt-inbox",${sentinelEvent}]""")
                 }
             }
         ))
         mockServer.start()
 
         receiver.connectToRelays(listOf(mockServer.url("/").toString().replace("http://", "ws://")))
-        assertTrue("Should receive event within 5s", latch.await(5, TimeUnit.SECONDS))
-        Thread.sleep(500) // Brief wait for potential duplicate to arrive
+        assertTrue("Sentinel should arrive within 5s", sentinelLatch.await(5, TimeUnit.SECONDS))
 
-        assertEquals("Duplicate should be dropped", 1, received.size)
+        // Sentinel arrived, so duplicate was already processed (or dropped).
+        // Expect: original event + sentinel = 2 items (duplicate dropped).
+        assertEquals("Duplicate should be dropped", 2, received.size)
+        assertEquals("Sentinel", received[1].label)
     }
 
     @Test
@@ -150,6 +158,7 @@ class NostrReceiverTest {
         val failingPort = failingServer.port
         failingServer.shutdown()
 
+        val connectedLatch = CountDownLatch(1)
         val receiver = NostrReceiver(
             keyManager = keyManager,
             onItem = {},
@@ -159,10 +168,23 @@ class NostrReceiverTest {
         val workingUrl = workingServer.url("/").toString().replace("http://", "ws://")
         val failingUrl = "ws://127.0.0.1:$failingPort"
 
+        // Observe relay statuses to know when the working relay connects
+        val scope = CoroutineScope(Dispatchers.IO)
+        scope.launch {
+            receiver.relayStatuses.collect { statuses ->
+                if (statuses[workingUrl] == RelayStatus.CONNECTED) {
+                    connectedLatch.countDown()
+                }
+            }
+        }
+
         receiver.connectToRelays(listOf(workingUrl, failingUrl))
 
-        // Wait for working relay to connect and failing relay to fail + at least one retry
-        Thread.sleep(3000)
+        // Wait for the working relay to reach CONNECTED state
+        assertTrue(
+            "Working relay should connect within 5s",
+            connectedLatch.await(5, TimeUnit.SECONDS),
+        )
 
         // The working relay is connected, so count must be 1 (not 0)
         assertEquals(

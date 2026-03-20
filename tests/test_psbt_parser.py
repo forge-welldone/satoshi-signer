@@ -1,7 +1,7 @@
 import base64
 import os
 import pytest
-from remotesigner.psbt_parser import parse_psbt
+from remotesigner.psbt_parser import parse_psbt, MAX_PSBT_SIZE
 
 PSBTS_DIR = os.path.join(os.path.dirname(__file__), "psbts")
 
@@ -191,3 +191,25 @@ class TestParseTestnetPsbt:
                 assert out["address"].startswith("tb1"), (
                     f"Output address {out['address']} should start with tb1"
                 )
+
+
+class TestPsbtSizeLimit:
+    """parse_psbt should reject oversized PSBTs (#23)."""
+
+    def test_rejects_psbt_exceeding_size_limit(self):
+        """PSBT bytes larger than MAX_PSBT_SIZE should raise ValueError."""
+        oversized = b"psbt\xff" + b"\x00" * MAX_PSBT_SIZE
+        with pytest.raises(ValueError, match="too large"):
+            parse_psbt(oversized)
+
+    def test_accepts_psbt_at_size_limit(self):
+        """PSBT bytes exactly at MAX_PSBT_SIZE should not be rejected for size."""
+        # This will fail parsing (not valid PSBT content) but NOT for size.
+        at_limit = b"psbt\xff" + b"\x00" * (MAX_PSBT_SIZE - 5)
+        assert len(at_limit) == MAX_PSBT_SIZE
+        with pytest.raises(ValueError, match="Invalid PSBT"):
+            parse_psbt(at_limit)
+
+    def test_size_limit_is_1mb(self):
+        """MAX_PSBT_SIZE should be 1MB (1_048_576 bytes)."""
+        assert MAX_PSBT_SIZE == 1_048_576

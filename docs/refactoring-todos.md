@@ -337,39 +337,45 @@ The Nostr secret key (used for NIP-04 PSBT decryption) is stored as hex in `Shar
 
 ---
 
-### 23. No PSBT size limit
+### ~~23. No PSBT size limit~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `psbt_parser.py:34`, `signer.py:789` |
 | **Consensus** | System Architect, Python Engineer (2/4) |
 
-Both `parse_psbt` and `sign_psbt` accept arbitrary `psbt_bytes` without size limit. PSBTs arrive from untrusted Nostr relays.
+~~Both `parse_psbt` and `sign_psbt` accept arbitrary `psbt_bytes` without size limit. PSBTs arrive from untrusted Nostr relays.~~
 
-**Fix:** Enforce a reasonable size limit (e.g., 1MB) before parsing.
+~~**Fix:** Enforce a reasonable size limit (e.g., 1MB) before parsing.~~
+
+**Fixed:** Added `MAX_PSBT_SIZE = 1_048_576` (1 MB) constant in `psbt_parser.py`. `parse_psbt` raises `ValueError` for oversized input. `sign_psbt` imports the same constant and returns error status. 5 tests added across `test_psbt_parser.py` and `test_signer.py`.
 
 ---
 
-### 24. Replace Thread.sleep in tests with deterministic synchronization
+### ~~24. Replace Thread.sleep in tests with deterministic synchronization~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `app/src/androidTest/.../NostrReceiverTest.kt:131,165` |
 | **Consensus** | Android Engineer |
 
-`Thread.sleep(500)` and `Thread.sleep(3000)` are inherently flaky. The same file uses `CountDownLatch` elsewhere.
+~~`Thread.sleep(500)` and `Thread.sleep(3000)` are inherently flaky. The same file uses `CountDownLatch` elsewhere.~~
 
-**Fix:** Use `CountDownLatch` or polling with timeout for all assertions.
+~~**Fix:** Use `CountDownLatch` or polling with timeout for all assertions.~~
+
+**Fixed:** `receiver_deduplicatesByEventId` now uses the sentinel-event pattern (sends a sentinel after the duplicate, waits for it via `CountDownLatch`). `receiver_connectedCount_survivesRelayFailure` now collects `relayStatuses` StateFlow and uses `CountDownLatch` to wait for the working relay to reach `CONNECTED` state. No more `Thread.sleep` in the file.
 
 ---
 
-### 25. Undeclared `ecdsa` dependency in nostr_signer
+### ~~25. Undeclared `ecdsa` dependency in nostr_signer~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `nostr_signer/nostr_signer.py:69` |
 | **Consensus** | Python Engineer |
 
-`from ecdsa import SECP256k1, SigningKey` — relies on transitive dependency from `trezor`. If `trezor` drops `ecdsa`, nostr_signer breaks.
+~~`from ecdsa import SECP256k1, SigningKey` — relies on transitive dependency from `trezor`. If `trezor` drops `ecdsa`, nostr_signer breaks.~~
 
-**Fix:** Add `ecdsa` to requirements or refactor to use `embit` for ECDH.
+~~**Fix:** Add `ecdsa` to requirements or refactor to use `embit` for ECDH.~~
+
+**Fixed:** Refactored `_ecdh()` to use embit's secp256k1 bindings (`ec_pubkey_tweak_mul` + `ec_pubkey_serialize`) instead of the `ecdsa` pure-Python library. Eliminated the transitive dependency. All 27 existing nostr_signer tests pass unchanged.
 
 ---
 

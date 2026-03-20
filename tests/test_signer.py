@@ -29,6 +29,7 @@ from remotesigner.signer import (
     psbt_to_prev_txes,
     _get_master_fingerprint,
     sign_psbt,
+    MAX_PSBT_SIZE,
 )
 
 
@@ -1631,3 +1632,20 @@ class TestConversionNegativePaths:
 
         with pytest.raises(ValueError, match="Cannot derive address"):
             psbt_to_trezor_outputs(mock_psbt, MASTER_FP, network="test")
+
+
+class TestSignPsbtSizeLimit:
+    """sign_psbt should reject oversized PSBTs (#23)."""
+
+    def test_rejects_psbt_exceeding_size_limit(self):
+        """PSBT bytes larger than MAX_PSBT_SIZE should return error status."""
+        oversized = b"psbt\xff" + b"\x00" * MAX_PSBT_SIZE
+        mock_bridge = MagicMock()
+        result = sign_psbt(oversized, mock_bridge, network="test")
+        assert result["status"] == "error"
+        assert "too large" in result["message"]
+
+    def test_size_limit_matches_parser(self):
+        """sign_psbt and parse_psbt should use the same size limit constant."""
+        from remotesigner.psbt_parser import MAX_PSBT_SIZE as PARSER_MAX
+        assert MAX_PSBT_SIZE == PARSER_MAX
