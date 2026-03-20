@@ -22,9 +22,10 @@ Construction in a `@pytest.fixture`:
 5. Populate the PSBT input scope:
    - `witness_utxo`: TransactionOutput with the P2WSH script
    - `witness_script`: the multisig script
-   - `bip32_derivations`: one per signer, each with a unique 4-byte fingerprint and mainnet path (`m/48'/0'/0'/2'/0/0`)
+   - `bip32_derivations`: one per signer, each with a unique 4-byte fingerprint and mainnet path (`m/48'/0'/0'/2'/0/0`). Values must be `embit.psbt.DerivationPath(fingerprint, path)` (not `KeyOrigin`).
    - `partial_sigs`: one entry (signer 0's key) with a dummy DER signature
-6. Serialize to bytes, return from fixture
+6. Sort public keys lexicographically (BIP67) before building the witness script
+7. Serialize to bytes, return from fixture
 
 ### Tests (`TestParseMultisigPsbt`)
 
@@ -40,14 +41,14 @@ Construction in a `@pytest.fixture`:
 
 1. Generate 1 deterministic key
 2. Build a transaction: 1 input (50k sats), 2 outputs:
-   - Output 0: OP_RETURN (`0x6a` + push_len + UTF-8 text), amount 0
+   - Output 0: OP_RETURN (`0x6a` + push_len + UTF-8 text `"Synthetic PSBT fixture"`), amount 0
    - Output 1: P2WPKH payment, amount 49k sats
-3. Populate PSBT input scope with `witness_utxo` and `bip32_derivations` (mainnet path)
+3. Populate PSBT input scope with `witness_utxo` and `bip32_derivations` (mainnet path `m/84'/0'/0'/0/0`, using `embit.psbt.DerivationPath`)
 4. Serialize to bytes, return from fixture
 
 ### Tests (`TestParseOpReturnPsbt`)
 
-- `test_detects_op_return_output` — `result["outputs"][0]["op_return"]` equals the text payload
+- `test_detects_op_return_output` — `result["outputs"][0]["op_return"] == "Synthetic PSBT fixture"`
 - `test_op_return_amount_is_zero` — `result["outputs"][0]["amount"] == 0`
 - `test_non_op_return_output_has_no_field` — `"op_return" not in result["outputs"][1]`
 
