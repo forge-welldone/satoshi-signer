@@ -267,6 +267,7 @@ app/src/main/
 app/src/androidTest/kotlin/com/remotesigner/
 ├── AppLaunchTest.kt                # App launch smoke test
 ├── ScreenRenderTest.kt             # Screen render smoke tests
+├── ContactsScreenTest.kt          # ContactsScreen UI tests (add/edit/delete dialogs)
 ├── NavigationTest.kt               # State machine navigation test
 ├── ChaquopyE2ETest.kt              # Chaquopy + cassette replay E2E tests
 ├── InboxScreenTest.kt              # Nostr inbox UI tests

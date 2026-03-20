@@ -261,13 +261,15 @@
 
 ---
 
-### 17. 🧪 Add ContactsScreen Compose UI tests
+### ~~17. 🧪 Add ContactsScreen Compose UI tests~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | New: `app/src/androidTest/.../ContactsScreenTest.kt` |
 | **Consensus** | Android Engineer |
 
-ContactsScreen has add/edit/delete dialogs and fingerprint management but no Compose UI tests. Other screens are well-covered by `ScreenRenderTest`.
+~~ContactsScreen has add/edit/delete dialogs and fingerprint management but no Compose UI tests. Other screens are well-covered by `ScreenRenderTest`.~~
+
+**Fixed:** 20 Compose UI tests added in `ContactsScreenTest.kt` covering: empty state rendering, contact list display (labels, fingerprints, npub), Add Contact dialog (validation, save, cancel), Edit Contact dialog (pre-filled values, update label, add/delete fingerprint, validation), Delete Contact confirmation dialog (confirm, cancel), and dynamic list updates via mutable state.
 
 ---
 
@@ -519,7 +521,7 @@ When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marke
 | `_is_psbt_fully_signed` | Python unit tests | **High** | None |
 | Signing error paths | Python unit tests | **Medium** | None |
 | ~~NostrReceiver message handling~~ | ~~Instrumented tests~~ | ~~**Medium**~~ | ~~Done (#16)~~ |
-| ContactsScreen UI | Instrumented UI tests | **Medium** | None |
+| ~~ContactsScreen UI~~ | ~~Instrumented UI tests~~ | ~~**Medium**~~ | ~~Done (#17)~~ |
 | Broadcast integration | Python integration tests | **Low** | None |
 | ~~Bech32 (move to JVM)~~ | ~~JVM unit tests~~ | ~~**Low**~~ | ~~Done (#15)~~ |
 
