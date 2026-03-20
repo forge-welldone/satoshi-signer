@@ -225,15 +225,17 @@
 
 ---
 
-### 14. 🧪 Fix permanently skipped Python tests (missing fixtures)
+### ~~14. 🧪 Fix permanently skipped Python tests (missing fixtures)~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `tests/test_psbt_parser.py` |
 | **Consensus** | Python Engineer |
 
-`TestParseMultisigPsbt` and `TestParseOpReturnPsbt` reference PSBT files (`trezor.multisig.2.a-ads-7d42c2e3.psbt`, `aa_cold3_watch-f1516d7b.psbt`) that don't exist in `tests/psbts/`. These regression tests are permanently skipped.
+~~`TestParseMultisigPsbt` and `TestParseOpReturnPsbt` reference PSBT files (`trezor.multisig.2.a-ads-7d42c2e3.psbt`, `aa_cold3_watch-f1516d7b.psbt`) that don't exist in `tests/psbts/`. These regression tests are permanently skipped.~~
 
-**Fix:** Add missing PSBT fixtures or rewrite tests with synthetic PSBT data.
+~~**Fix:** Add missing PSBT fixtures or rewrite tests with synthetic PSBT data.~~
+
+**Fixed:** Replaced file-based fixtures with inline embit-constructed PSBTs. `TestParseMultisigPsbt` builds a synthetic 2-of-3 P2WSH multisig PSBT (partially signed). `TestParseOpReturnPsbt` builds a synthetic PSBT with an OP_RETURN output. All 8 tests now run without skips.
 
 ---
 
