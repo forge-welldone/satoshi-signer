@@ -83,6 +83,7 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation(libs.security.crypto)
     ksp(libs.room.compiler)
     debugImplementation(libs.compose.ui.tooling)
     androidTestImplementation(platform(libs.compose.bom))
