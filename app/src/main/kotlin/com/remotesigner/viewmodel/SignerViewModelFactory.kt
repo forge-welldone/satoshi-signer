@@ -5,11 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.remotesigner.bridge.PythonBridge
 import com.remotesigner.bridge.SigningOrchestrator
+import com.remotesigner.broadcast.TransactionBroadcaster
 import com.remotesigner.data.AppDatabase
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
 import com.remotesigner.nostr.NostrKeyManager
 import com.remotesigner.usb.TrezorUsbManager
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 class SignerViewModelFactory(
     private val application: Application,
@@ -22,6 +25,11 @@ class SignerViewModelFactory(
         val inboxRepo = InboxRepository(db.inboxDao(), pythonBridge)
         val trezorUsb = TrezorUsbManager(application)
         val orchestrator = SigningOrchestrator(pythonBridge, trezorUsb)
+        val broadcastClient = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build()
+        val broadcaster = TransactionBroadcaster(broadcastClient)
         return SignerViewModel(
             application = application,
             pythonBridge = pythonBridge,
@@ -30,6 +38,7 @@ class SignerViewModelFactory(
             signingOrchestrator = orchestrator,
             trezorUsb = trezorUsb,
             keyManager = NostrKeyManager(application),
+            broadcaster = broadcaster,
         ) as T
     }
 }

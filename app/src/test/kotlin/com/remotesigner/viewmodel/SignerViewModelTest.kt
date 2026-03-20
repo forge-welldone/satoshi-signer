@@ -1,8 +1,9 @@
 package com.remotesigner.viewmodel
 
 import android.app.Application
-import com.remotesigner.bridge.BroadcastResult
 import com.remotesigner.bridge.ParsedPsbtResult
+import com.remotesigner.broadcast.BroadcastResult
+import com.remotesigner.broadcast.TransactionBroadcaster
 import com.remotesigner.bridge.PythonBridgeInterface
 import com.remotesigner.bridge.SignerInfo
 import com.remotesigner.bridge.SigningOrchestrator
@@ -51,6 +52,7 @@ class SignerViewModelTest {
     private lateinit var orchestrator: SigningOrchestrator
     private lateinit var trezorUsb: TrezorUsbManager
     private lateinit var keyManager: NostrKeyManager
+    private lateinit var broadcaster: TransactionBroadcaster
     private lateinit var vm: SignerViewModel
 
     @Before
@@ -64,6 +66,7 @@ class SignerViewModelTest {
         orchestrator = mockk(relaxed = true)
         trezorUsb = mockk(relaxed = true)
         keyManager = mockk(relaxed = true)
+        broadcaster = mockk()
 
         every { contactRepo.allWithFingerprints } returns flowOf(emptyList())
         every { inboxRepo.items } returns flowOf(emptyList())
@@ -73,7 +76,7 @@ class SignerViewModelTest {
 
         vm = SignerViewModel(
             app, pythonBridge, contactRepo, inboxRepo,
-            orchestrator, trezorUsb, keyManager,
+            orchestrator, trezorUsb, keyManager, broadcaster,
         )
     }
 
@@ -305,7 +308,7 @@ class SignerViewModelTest {
         loadAndSign(SigningResult.Complete(rawHex = "0200abcd", network = "test"))
         awaitState { it is AppState.Result }
 
-        coEvery { pythonBridge.broadcast("0200abcd", "testnet4") } returns
+        every { broadcaster.broadcast("0200abcd", "testnet4") } returns
             BroadcastResult(status = "ok", txid = "tx123abc")
 
         vm.broadcast("testnet4")
@@ -323,7 +326,7 @@ class SignerViewModelTest {
         loadAndSign(SigningResult.Complete(rawHex = "0200abcd", network = "test"))
         awaitState { it is AppState.Result }
 
-        coEvery { pythonBridge.broadcast("0200abcd", "testnet4") } returns
+        every { broadcaster.broadcast("0200abcd", "testnet4") } returns
             BroadcastResult(status = "error", message = "Mempool full")
 
         vm.broadcast("testnet4")
@@ -339,7 +342,7 @@ class SignerViewModelTest {
         loadAndSign(SigningResult.Complete(rawHex = "0200abcd", network = "test"))
         awaitState { it is AppState.Result }
 
-        coEvery { pythonBridge.broadcast("0200abcd", "testnet4") } throws
+        every { broadcaster.broadcast("0200abcd", "testnet4") } throws
             RuntimeException("Network error")
 
         vm.broadcast("testnet4")
@@ -621,7 +624,7 @@ class SignerViewModelTest {
         vm.signWithTrezor()
         awaitState { it is AppState.Result }
 
-        coEvery { pythonBridge.broadcast("0200abcd", "testnet4") } returns
+        every { broadcaster.broadcast("0200abcd", "testnet4") } returns
             BroadcastResult(status = "ok", txid = "tx123")
 
         vm.broadcast("testnet4")
@@ -688,7 +691,7 @@ class SignerViewModelTest {
         vm.signWithTrezor()
         awaitState { it is AppState.Result }
 
-        coEvery { pythonBridge.broadcast("0200abcd", "testnet4") } returns
+        every { broadcaster.broadcast("0200abcd", "testnet4") } returns
             BroadcastResult(status = "ok", txid = "tx123")
         vm.broadcast("testnet4")
         awaitState { it is AppState.Result && it.txid != null }

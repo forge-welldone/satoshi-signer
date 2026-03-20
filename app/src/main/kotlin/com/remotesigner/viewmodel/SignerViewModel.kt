@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.remotesigner.bridge.PythonBridgeInterface
 import com.remotesigner.bridge.SignerInfo
+import com.remotesigner.broadcast.TransactionBroadcaster
 import com.remotesigner.bridge.SigningCallbackImpl
 import com.remotesigner.bridge.SigningOrchestrator
 import com.remotesigner.bridge.SigningResult
@@ -78,6 +79,7 @@ class SignerViewModel(
     private val signingOrchestrator: SigningOrchestrator,
     val trezorUsb: TrezorUsbManager,
     val keyManager: NostrKeyManager,
+    private val broadcaster: TransactionBroadcaster,
 ) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow<AppState>(AppState.Home)
@@ -336,7 +338,7 @@ class SignerViewModel(
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    pythonBridge.broadcast(state.rawHex, targetNetwork)
+                    broadcaster.broadcast(state.rawHex, targetNetwork)
                 }
 
                 if (result.status == "ok") {
