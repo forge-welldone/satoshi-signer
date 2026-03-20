@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -253,8 +254,10 @@ class SignerViewModel(
                 psbtBytes = psbt,
                 network = currentNetwork,
                 onProgress = { msg ->
-                    val current = (_state.value as? AppState.Signing)?.log ?: ""
-                    _state.value = AppState.Signing(msg, log = current + msg + "\n")
+                    _state.update { current ->
+                        if (current is AppState.Signing) current.copy(message = msg, log = current.log + msg + "\n")
+                        else current
+                    }
                 },
             )
             handleSigningResult(result)
@@ -270,8 +273,10 @@ class SignerViewModel(
                 psbtBytes = psbtBytes,
                 network = network,
                 onProgress = { msg ->
-                    val current = (_state.value as? AppState.Signing)?.log ?: ""
-                    _state.value = AppState.Signing(msg, log = current + msg + "\n")
+                    _state.update { current ->
+                        if (current is AppState.Signing) current.copy(message = msg, log = current.log + msg + "\n")
+                        else current
+                    }
                 },
                 withPassphraseUI = false,
             )
@@ -330,36 +335,44 @@ class SignerViewModel(
     }
 
     fun broadcast(targetNetwork: String) {
-        val state = _state.value
-        if (state !is AppState.Result || state.rawHex == null) return
+        val rawHex = (_state.value as? AppState.Result)?.rawHex ?: return
 
-        _state.value = state.copy(broadcastStatus = "Broadcasting...")
+        _state.update { state ->
+            if (state is AppState.Result) state.copy(broadcastStatus = "Broadcasting...")
+            else state
+        }
 
         viewModelScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    broadcaster.broadcast(state.rawHex, targetNetwork)
+                    broadcaster.broadcast(rawHex, targetNetwork)
                 }
 
                 if (result.status == "ok") {
-                    _state.value = state.copy(
-                        txid = result.txid,
-                        broadcastStatus = "Broadcast successful",
-                        network = targetNetwork,
-                    )
+                    _state.update { state ->
+                        if (state is AppState.Result) state.copy(
+                            txid = result.txid,
+                            broadcastStatus = "Broadcast successful",
+                            network = targetNetwork,
+                        ) else state
+                    }
                     val inboxId = currentSigningInboxId
                     if (inboxId != null && result.txid != null) {
                         inboxRepository.updateBroadcast(inboxId, InboxStatus.BROADCAST, result.txid, targetNetwork)
                     }
                 } else {
-                    _state.value = state.copy(
-                        broadcastStatus = "Broadcast failed: ${result.message}",
-                    )
+                    _state.update { state ->
+                        if (state is AppState.Result) state.copy(
+                            broadcastStatus = "Broadcast failed: ${result.message}",
+                        ) else state
+                    }
                 }
             } catch (e: Exception) {
-                _state.value = state.copy(
-                    broadcastStatus = "Broadcast failed: ${e.message}",
-                )
+                _state.update { state ->
+                    if (state is AppState.Result) state.copy(
+                        broadcastStatus = "Broadcast failed: ${e.message}",
+                    ) else state
+                }
             }
         }
     }
@@ -429,10 +442,11 @@ class SignerViewModel(
     }
 
     private suspend fun reEnrichSigners() {
-        val currentState = _state.value
-        if (currentState is AppState.TransactionReview) {
-            val enriched = contactRepository.enrichSigners(currentState.signers)
-            _state.value = currentState.copy(signers = enriched)
+        val currentSigners = (_state.value as? AppState.TransactionReview)?.signers ?: return
+        val enriched = contactRepository.enrichSigners(currentSigners)
+        _state.update { state ->
+            if (state is AppState.TransactionReview) state.copy(signers = enriched)
+            else state
         }
     }
 
