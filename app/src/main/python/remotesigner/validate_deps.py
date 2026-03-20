@@ -85,14 +85,7 @@ def validate():
     except Exception as e:
         results["passphrase_on_device"] = {"status": "error", "detail": str(e)}
 
-    # 6. Test requests
-    try:
-        import requests
-        results["requests"] = {"status": "ok", "detail": "requests imported"}
-    except Exception as e:
-        results["requests"] = {"status": "error", "detail": str(e)}
-
-    # 7. Document trezorlib API version info
+    # 6. Document trezorlib API version info
     try:
         from trezorlib.transport import Transport
         has_chunk_size = hasattr(Transport, 'CHUNK_SIZE')
