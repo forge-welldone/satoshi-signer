@@ -370,6 +370,86 @@ class SignerViewModelTest {
         assertEquals(stateBefore, vm.state.value)
     }
 
+    // ===== Race Condition Regression =====
+
+    @Test
+    fun `broadcast completion preserves Home state when user navigated away`() = runBlocking {
+        loadAndSign(SigningResult.Complete(rawHex = "0200abcd", network = "test"))
+        awaitState { it is AppState.Result }
+
+        // Make broadcaster suspend so we can interleave goHome()
+        val broadcastStarted = java.util.concurrent.CountDownLatch(1)
+        val broadcastContinue = java.util.concurrent.CountDownLatch(1)
+        every { broadcaster.broadcast("0200abcd", "testnet4") } answers {
+            broadcastStarted.countDown()
+            broadcastContinue.await()
+            BroadcastResult(status = "ok", txid = "tx123abc")
+        }
+
+        vm.broadcast("testnet4")
+        broadcastStarted.await(1, java.util.concurrent.TimeUnit.SECONDS)
+
+        // User navigates away while broadcast is in flight
+        vm.goHome()
+        assertEquals(AppState.Home, vm.state.value)
+
+        // Broadcast completes — should NOT overwrite Home
+        broadcastContinue.countDown()
+
+        // Wait for IO continuation to resume and process stale write
+        Thread.sleep(100)
+        assertEquals(AppState.Home, vm.state.value)
+    }
+
+    @Test
+    fun `reEnrichSigners preserves Home state when user left TransactionReview`() = runBlocking {
+        loadTestPsbt()
+
+        // Make enrichSigners suspend so we can interleave goHome()
+        val enrichStarted = java.util.concurrent.CountDownLatch(1)
+        val enrichContinue = java.util.concurrent.CountDownLatch(1)
+        coEvery { contactRepo.enrichSigners(any()) } coAnswers {
+            enrichStarted.countDown()
+            enrichContinue.await()
+            firstArg()
+        }
+
+        vm.saveContact("Alice", "aabbccdd", null)
+        enrichStarted.await(1, java.util.concurrent.TimeUnit.SECONDS)
+
+        // User navigates away while enrichment is in flight
+        vm.goHome()
+        assertEquals(AppState.Home, vm.state.value)
+
+        // Enrichment completes — should NOT overwrite Home
+        enrichContinue.countDown()
+
+        // Wait for IO continuation to resume and process stale write
+        Thread.sleep(100)
+        assertEquals(AppState.Home, vm.state.value)
+    }
+
+    @Test
+    fun `progress callback preserves Result state when signing already completed`() = runBlocking {
+        loadTestPsbt()
+
+        // Capture the onProgress callback
+        var capturedOnProgress: ((String) -> Unit)? = null
+        coEvery { orchestrator.signWithTrezor(any(), any(), any()) } coAnswers {
+            capturedOnProgress = thirdArg()
+            SigningResult.Complete(rawHex = "0200abcd", network = "test")
+        }
+
+        vm.signWithTrezor()
+        awaitState { it is AppState.Result }
+
+        // Simulate a late progress callback arriving after signing completed
+        capturedOnProgress?.invoke("Late message")
+
+        // State should still be Result, not Signing
+        assertTrue(vm.state.value is AppState.Result)
+    }
+
     // ===== Cancellation =====
 
     @Test
