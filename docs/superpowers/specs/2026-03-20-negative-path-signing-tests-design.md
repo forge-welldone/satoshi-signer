@@ -4,7 +4,7 @@
 
 ## Problem
 
-The Python signing module (`signer.py`) has ~23 untested error paths. Cassette-based E2E tests only replay happy paths. Error conditions like truncated PSBTs, missing fingerprints, and relative paths without callbacks are never exercised.
+The Python signing module (`signer.py`) has numerous untested error paths. Cassette-based E2E tests only replay happy paths. Error conditions like truncated PSBTs, missing fingerprints, and relative paths without callbacks are never exercised.
 
 ## Approach
 
@@ -31,32 +31,32 @@ Integration tests through `sign_psbt()`. Uses the same mock pattern as `TestSign
 | 3 | `test_not_psbt_bytes_returns_error` | `b"not a psbt at all"` | `status == "error"` |
 | 4 | `test_connection_failure_returns_error` | `AndroidTransport` constructor raises `OSError` | `status == "error"` |
 | 5 | `test_fingerprint_read_failure_returns_error` | `trezor_btc.get_public_node` raises `RuntimeError` | `status == "error"` |
-| 6 | `test_relative_paths_no_callback_returns_error` | Valid PSBT with relative derivation paths, `status_callback=None` | `status == "error"`, message mentions "relative derivation paths" |
-| 7 | `test_other_trezor_failure_code_returns_error` | `trezor_btc.sign_tx` raises `TrezorFailure(UnexpectedMessage)` | `status == "error"` (not `"cancelled"`) |
-| 8 | `test_account_path_callback_error_returns_error` | `status_callback.requestAccountPath()` raises `RuntimeError` | `status == "error"`, message mentions "Account path" |
+| 6 | `test_relative_paths_no_callback_returns_error` | Patch `PSBT.parse` to return mock PSBT with relative derivation paths, `status_callback=None` | `status == "error"`, message mentions "relative derivation paths" |
+| 7 | `test_other_trezor_failure_code_returns_error` | `trezor_btc.sign_tx` raises `TrezorFailure(Failure(code=FailureType.UnexpectedMessage))` | `status == "error"` (not `"cancelled"`) |
+| 8 | `test_account_path_callback_error_returns_error` | `status_callback.requestAccountPath()` raises `RuntimeError`. Same mock PSBT as test 6 | `status == "error"`, message mentions "Account path" |
+| 9 | `test_output_conversion_error_returns_error` | Patch `psbt_to_trezor_outputs` to raise `ValueError` inside `_perform_signing` | `status == "error"`, message present |
 
 ### Class 2: `TestConversionNegativePaths`
 
-Direct unit tests on `psbt_to_trezor_inputs` and `psbt_to_trezor_outputs`. Uses fake embit objects following the existing `_FakeInputScope`/`_FakePsbt` pattern.
+Direct unit tests on `psbt_to_trezor_inputs` and `psbt_to_trezor_outputs`. Requires new fake embit objects (more elaborate than the existing `_FakeInputScope`/`_FakePsbt` which only serve `_is_psbt_fully_signed`). New fakes need: `utxo` (with `.script_pubkey.data`, `.value`), `bip32_derivations`, `taproot_bip32_derivations`, `txid`, `vout`, `sequence`, and `partial_sigs` for inputs; `script_pubkey` (with `.data`, `.address()`), `value`, `bip32_derivations`, `taproot_bip32_derivations` for outputs.
 
 | # | Test | Trigger | Assertion |
 |---|------|---------|-----------|
-| 9 | `test_input_missing_utxo_raises` | Fake input scope with `utxo = None` | Raises `ValueError` mentioning "no UTXO" |
-| 10 | `test_output_bad_script_pubkey_raises` | Fake output scope with nonsense `script_pubkey` | Raises `ValueError` mentioning "Cannot derive address" |
-| 11 | `test_input_no_matching_fingerprint_ignored` | Valid input with non-matching fingerprint | Input index in `to_ignore` list |
-| 12 | `test_all_inputs_ignored_produces_empty_match` | Multi-input PSBT, no inputs match signer | All indices in `to_ignore` |
+| 10 | `test_input_missing_utxo_raises` | Fake input scope with `utxo = None` | Raises `ValueError` mentioning "no UTXO" |
+| 11 | `test_output_bad_script_pubkey_raises` | Fake output scope with nonsense `script_pubkey` that raises on `.address()` | Raises `ValueError` mentioning "Cannot derive address" |
 
 ## Implementation Notes
 
-- Tests 1-3 need no mocking — `PSBT.parse()` fails before any Trezor interaction.
-- Tests 4-5 need the standard `AndroidTransport`/`TrezorClient`/`trezor_btc` patches but fail early in `_connect_and_get_fingerprint`.
-- Test 6 needs a PSBT with relative derivation paths. Construct by modifying the existing `TEST_PSBT_B64` fixture — replace the BIP32 derivation fingerprint with a non-master fingerprint and use short (relative) paths.
-- Test 8 needs a mock `status_callback` with `requestAccountPath()` that raises. Reuses the same PSBT fixture as test 6.
-- Tests 9-12 use lightweight fake objects — no trezorlib mocking needed.
+- **Tests 1-3:** No mocking needed — `PSBT.parse()` fails before any Trezor interaction.
+- **Tests 4-5:** Need `AndroidTransport`/`TrezorClient`/`trezor_btc` patches but fail early in `_connect_and_get_fingerprint`.
+- **Tests 6, 8:** Need a mock PSBT with relative derivation paths. Patch `PSBT.parse` to return a `MagicMock` PSBT with `bip32_derivations` containing relative paths (unhardened, e.g., `[0, 0]`). Also need `trezor_btc.get_public_node` to use a `side_effect` function: return the correct fingerprint on the first call (for `_get_master_fingerprint`), then return non-matching pubkeys for all subsequent calls (for `_find_key_origin` probing, which tries up to 400 paths).
+- **Test 7:** `TrezorFailure` must be constructed as `TrezorFailure(Failure(code=FailureType.UnexpectedMessage))` following the existing pattern at `test_signer.py:962`.
+- **Test 9:** Patch `psbt_to_trezor_outputs` at the module level to raise `ValueError`, verify it flows through `sign_psbt`'s exception handler correctly.
+- **Tests 10-11:** Need new fake classes (e.g., `_FakeConversionInputScope`, `_FakeConversionOutputScope`) with richer attributes than the existing `_FakeInputScope`.
 
 ## Files Changed
 
-- `tests/test_signer.py` — add `TestSignPsbtNegativePaths` and `TestConversionNegativePaths` classes
+- `tests/test_signer.py` — add `TestSignPsbtNegativePaths` and `TestConversionNegativePaths` classes, plus new fake helper classes
 
 ## Files NOT Changed
 
