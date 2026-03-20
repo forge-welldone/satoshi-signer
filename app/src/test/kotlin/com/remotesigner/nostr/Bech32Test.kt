@@ -1,6 +1,5 @@
-package com.remotesigner
+package com.remotesigner.nostr
 
-import com.remotesigner.nostr.Bech32
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test

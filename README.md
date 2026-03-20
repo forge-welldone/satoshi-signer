@@ -273,7 +273,6 @@ app/src/androidTest/kotlin/com/remotesigner/
 ├── Nip04Test.kt                    # NIP-04 encryption tests
 ├── NostrReceiverTest.kt            # WebSocket receiver tests
 ├── NostrKeyManagerTest.kt          # Key storage tests
-├── Bech32Test.kt                   # Bech32 encoding tests
 ├── PlaybackBridge.kt               # Cassette replay bridge (SigningBridge impl)
 ├── TestFixtures.kt                 # Mock AppState instances for tests
 └── data/
@@ -284,6 +283,7 @@ app/src/androidTest/kotlin/com/remotesigner/
 
 app/src/test/kotlin/com/remotesigner/
 ├── viewmodel/SignerViewModelTest.kt # ViewModel state machine (JVM, mockk)
+├── nostr/Bech32Test.kt             # Bech32 encoding/decoding (JVM)
 ├── nfc/NdefTextParserTest.kt       # NFC NDEF parsing (JVM, no emulator needed)
 ├── data/FingerprintValidatorTest.kt # Fingerprint validation (JVM)
 └── ui/MempoolUrlTest.kt            # Mempool URL generation (JVM)

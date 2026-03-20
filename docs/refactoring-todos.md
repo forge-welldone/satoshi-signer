@@ -237,13 +237,15 @@
 
 ---
 
-### 15. 🧪 Move Bech32Test to JVM tests
+### ~~15. 🧪 Move Bech32Test to JVM tests~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `app/src/androidTest/.../Bech32Test.kt` → `app/src/test/.../Bech32Test.kt` |
 | **Consensus** | Android Engineer |
 
-Pure Kotlin with no Android dependencies, but runs as instrumented test (requires emulator). Moving to `test/` makes it a fast JVM test.
+~~Pure Kotlin with no Android dependencies, but runs as instrumented test (requires emulator). Moving to `test/` makes it a fast JVM test.~~
+
+**Fixed:** Moved to `app/src/test/kotlin/com/remotesigner/nostr/Bech32Test.kt` as a JVM unit test. Package updated to `com.remotesigner.nostr` to colocate with `Bech32.kt` source. All 4 tests (encode, decode, round-trip, nsec) pass without emulator.
 
 ---
 
@@ -503,7 +505,7 @@ When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marke
 | Trezor signing E2E | Cassette replay (Python + Android) | Good — happy path |
 | Room DAOs | Instrumented tests | Good — ContactDao, InboxDao, migration |
 | Compose screens | Instrumented UI tests | Good — HomeScreen, TransactionReview, SigningScreen, InboxScreen, navigation |
-| Nostr crypto | Instrumented tests | Good — Bech32, NIP-04, key management |
+| Nostr crypto | Instrumented + JVM tests | Good — Bech32 (JVM), NIP-04, key management |
 | NDEF parsing | JVM unit tests | Good — all text encoding variants |
 | Pure utilities | JVM unit tests | Good — FingerprintValidator, MempoolUrl |
 
@@ -517,7 +519,7 @@ When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marke
 | NostrReceiver message handling | Instrumented tests | **Medium** | None |
 | ContactsScreen UI | Instrumented UI tests | **Medium** | None |
 | Broadcast integration | Python integration tests | **Low** | None |
-| Bech32 (move to JVM) | JVM unit tests | **Low** | None |
+| ~~Bech32 (move to JVM)~~ | ~~JVM unit tests~~ | ~~**Low**~~ | ~~Done (#15)~~ |
 
 ### Testing recommendations
 
