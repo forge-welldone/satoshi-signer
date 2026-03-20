@@ -1575,3 +1575,59 @@ class TestSignPsbtNegativePaths:
 
         assert result["status"] == "error"
         assert "Cannot derive address" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# Test conversion helper negative paths
+# ---------------------------------------------------------------------------
+
+class _FakeConversionInputScope:
+    """Fake input scope for psbt_to_trezor_inputs tests."""
+    def __init__(self, utxo=None, txid=b"\x00" * 32, vout=0,
+                 sequence=0xFFFFFFFF, bip32_derivations=None,
+                 redeem_script=None, witness_script=None, partial_sigs=None):
+        self.utxo = utxo
+        self.txid = txid
+        self.vout = vout
+        self.sequence = sequence
+        self.bip32_derivations = bip32_derivations or {}
+        self.taproot_bip32_derivations = {}
+        self.redeem_script = _FakeScript(redeem_script) if redeem_script else None
+        self.witness_script = _FakeScript(witness_script) if witness_script else None
+        self.partial_sigs = partial_sigs or {}
+
+
+class _FakeBadOutputScope:
+    """Fake output scope whose script_pubkey.address() raises."""
+    def __init__(self):
+        self.value = 50000
+        sp = MagicMock()
+        sp.data = b"\x99" * 25  # Nonsense script
+        sp.address.side_effect = Exception("unknown script type")
+        self.script_pubkey = sp
+        self.bip32_derivations = {}
+        self.taproot_bip32_derivations = {}
+        self.redeem_script = None
+        self.witness_script = None
+
+
+class TestConversionNegativePaths:
+    """Direct unit tests for conversion helper error handling."""
+
+    def test_input_missing_utxo_raises(self):
+        """Input with utxo=None raises ValueError."""
+        inp = _FakeConversionInputScope(utxo=None)
+        mock_psbt = MagicMock()
+        mock_psbt.inputs = [inp]
+
+        with pytest.raises(ValueError, match="no UTXO"):
+            psbt_to_trezor_inputs(mock_psbt, MASTER_FP)
+
+    def test_output_bad_script_pubkey_raises(self):
+        """Output with unrecognizable scriptPubKey raises ValueError."""
+        out = _FakeBadOutputScope()
+        mock_psbt = MagicMock()
+        mock_psbt.outputs = [out]
+
+        with pytest.raises(ValueError, match="Cannot derive address"):
+            psbt_to_trezor_outputs(mock_psbt, MASTER_FP, network="test")
