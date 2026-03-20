@@ -83,27 +83,69 @@ class TestParsePsbt:
         assert "total_sigs" not in result
 
 
-MULTISIG_PSBT_PATH = os.path.join(PSBTS_DIR, "trezor.multisig.2.a-ads-7d42c2e3.psbt")
-
-
-@pytest.mark.skipif(
-    not os.path.exists(MULTISIG_PSBT_PATH),
-    reason="Multisig PSBT fixture not present",
-)
 class TestParseMultisigPsbt:
-    """Regression tests for multisig PSBT parsing."""
+    """Tests for 2-of-3 multisig PSBT parsing with synthetic fixture."""
 
     @pytest.fixture
     def psbt_bytes(self):
-        with open(MULTISIG_PSBT_PATH, "rb") as f:
-            return f.read()
+        """Build a 2-of-3 P2WSH multisig PSBT, partially signed (1 of 3)."""
+        from embit.psbt import PSBT, DerivationPath
+        from embit.transaction import Transaction, TransactionInput, TransactionOutput
+        from embit.script import Script, p2wpkh, p2wsh
+        from embit import ec
+        from io import BytesIO
+        import hashlib
 
-    def test_parses_partially_signed_multisig(self, psbt_bytes):
+        # 3 deterministic keys (fixed seeds for reproducibility)
+        keys = [ec.PrivateKey(hashlib.sha256(f"test-key-{i}".encode()).digest())
+                for i in range(3)]
+        pubs = sorted([k.get_public_key() for k in keys],
+                       key=lambda p: p.serialize())
+
+        # 2-of-3 multisig witness script
+        script_bytes = b'\x52'  # OP_2
+        for pub in pubs:
+            ser = pub.serialize()
+            script_bytes += bytes([len(ser)]) + ser
+        script_bytes += b'\x53'  # OP_3
+        script_bytes += b'\xae'  # OP_CHECKMULTISIG
+        witness_script = Script(script_bytes)
+        wsh = p2wsh(witness_script)
+
+        fake_txid = hashlib.sha256(b"multisig-fixture-prevtx").digest()
+        tx = Transaction(
+            version=2,
+            vin=[TransactionInput(fake_txid, 0, sequence=0xfffffffd)],
+            vout=[
+                TransactionOutput(90000, p2wpkh(pubs[0])),
+                TransactionOutput(9000, wsh),
+            ],
+            locktime=0,
+        )
+
+        psbt = PSBT(tx)
+        psbt.inputs[0].witness_utxo = TransactionOutput(100000, wsh)
+        psbt.inputs[0].witness_script = witness_script
+
+        # BIP32 derivations: unique fingerprint per signer, mainnet path
+        HARDENED = 0x80000000
+        for i, pub in enumerate(pubs):
+            fp = bytes([i + 1, 0, 0, 0])
+            path = [48 | HARDENED, 0 | HARDENED, 0 | HARDENED, 2 | HARDENED, 0, 0]
+            psbt.inputs[0].bip32_derivations[pub] = DerivationPath(fp, path)
+
+        # One partial signature (first signer) — dummy DER-encoded sig
+        psbt.inputs[0].partial_sigs[pubs[0]] = b'\x30\x44' + b'\x00' * 68
+
+        buf = BytesIO()
+        psbt.write_to(buf)
+        return buf.getvalue()
+
+    def test_partially_signed_status(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
         assert result["status"] == "partially_signed"
 
-    def test_extracts_required_sigs(self, psbt_bytes):
-        """Bug regression: m-of-n requirements must be reported."""
+    def test_required_and_total_sigs(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
         assert result["required_sigs"] == 2
         assert result["total_sigs"] == 3
@@ -116,7 +158,7 @@ class TestParseMultisigPsbt:
         assert len(signed) == 1
         assert len(unsigned) == 2
 
-    def test_outputs_have_address(self, psbt_bytes):
+    def test_outputs_have_addresses(self, psbt_bytes):
         result = parse_psbt(psbt_bytes)
         assert len(result["outputs"]) >= 1
         for out in result["outputs"]:
