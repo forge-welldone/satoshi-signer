@@ -383,13 +383,15 @@ The Nostr secret key (used for NIP-04 PSBT decryption) is stored as hex in `Shar
 
 ## P3 — Polish (Nice to Have)
 
-### 26. Move data classes out of SignerViewModel
+### ~~26. Move data classes out of SignerViewModel~~ ✅ FIXED
 | | |
 |---|---|
 | **Files** | `viewmodel/SignerViewModel.kt:34-89` |
 | **Consensus** | System Architect, Rubyist (2/4) |
 
-`TxInput`, `TxOutput`, `SignerInfo`, `AppState`, `PassphraseRequest`, `AccountPathRequest` — shared domain types referenced by all UI code. Move to `viewmodel/Models.kt`.
+~~`TxInput`, `TxOutput`, `SignerInfo`, `AppState`, `PassphraseRequest`, `AccountPathRequest` — shared domain types referenced by all UI code. Move to `viewmodel/Models.kt`.~~
+
+**Fixed:** `AppState`, `PassphraseRequest`, and `AccountPathRequest` moved to `viewmodel/Models.kt`. (`TxInput`, `TxOutput`, `SignerInfo` were already moved to `bridge/BridgeModels.kt` in #7.) No import changes needed — all types remain in the `com.remotesigner.viewmodel` package.
 
 ---
 

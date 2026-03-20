@@ -224,6 +224,7 @@ app/src/main/
 │   ├── broadcast/
 │   │   └── TransactionBroadcaster.kt # HTTP broadcast to mempool.space/blockstream.info
 │   ├── viewmodel/
+│   │   ├── Models.kt                # AppState sealed class, PassphraseRequest, AccountPathRequest
 │   │   ├── SignerViewModel.kt       # State machine (Home→Review→Sign→Result→Error)
 │   │   └── SignerViewModelFactory.kt # Dependency injection via ViewModelProvider.Factory
 │   ├── data/
