@@ -451,13 +451,15 @@
 
 ---
 
-### 31. Remove unused navigation-compose dependency
+### ~~31. Remove unused navigation-compose dependency~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `app/build.gradle.kts:74` |
 | **Consensus** | System Architect, Android Engineer (2/4) |
 
-App uses sealed-class state machine, not Jetpack Navigation. Dead dependency.
+~~App uses sealed-class state machine, not Jetpack Navigation. Dead dependency.~~
+
+**Fixed:** Removed `navigation-compose` from `build.gradle.kts` and its version/library entries from `libs.versions.toml`.
 
 ---
 
