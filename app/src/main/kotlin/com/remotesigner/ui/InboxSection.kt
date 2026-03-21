@@ -105,7 +105,7 @@ fun InboxItemCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
-                if (item.status == InboxStatus.PENDING || item.status == InboxStatus.FAILED) {
+                if (item.status in listOf(InboxStatus.PENDING, InboxStatus.FAILED, InboxStatus.SIGNING)) {
                     OutlinedButton(onClick = { onSign(item) }) {
                         Text("Sign")
                     }
