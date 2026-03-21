@@ -1,6 +1,7 @@
 package com.remotesigner
 
 import android.content.Intent
+import android.hardware.usb.UsbManager
 import android.nfc.NdefRecord
 import android.nfc.NfcAdapter
 import android.nfc.Tag
@@ -13,6 +14,7 @@ import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.nfc.parseNdefTextPayload
 import com.remotesigner.ui.AppRoot
 import com.remotesigner.ui.theme.SatoshiSignerTheme
+import com.remotesigner.viewmodel.AppState
 import com.remotesigner.viewmodel.SignerViewModel
 import com.remotesigner.viewmodel.SignerViewModelFactory
 import java.io.IOException
@@ -61,6 +63,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // Suppress USB_DEVICE_ATTACHED when signing or reviewing a transaction —
+        // the SigningOrchestrator polling loop already handles device discovery,
+        // and processing this intent could disrupt the active flow.
+        if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            val currentState = viewModel.state.value
+            if (currentState is AppState.Signing || currentState is AppState.TransactionReview) {
+                return
+            }
+        }
         setIntent(intent)
     }
 
