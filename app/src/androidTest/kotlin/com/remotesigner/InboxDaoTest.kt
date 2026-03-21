@@ -53,24 +53,14 @@ class InboxDaoTest {
     )
 
     @Test
-    fun upsert_andGetAll_returnsItem() = runTest {
+    fun insertIgnore_andGetAll_returnsItem() = runTest {
         val item = makeItem()
-        dao.upsert(item)
+        dao.insertIgnore(item)
         val items = dao.getAll().first()
         assertEquals(1, items.size)
         assertEquals("event1", items[0].id)
         assertEquals(InboxStatus.PENDING, items[0].status)
         assertArrayEquals(item.psbtBytes, items[0].psbtBytes)
-    }
-
-    @Test
-    fun upsert_existingItem_updatesAllFields() = runTest {
-        dao.upsert(makeItem())
-        dao.upsert(makeItem(status = InboxStatus.SIGNED, rawHex = "deadbeef"))
-        val items = dao.getAll().first()
-        assertEquals(1, items.size)
-        assertEquals(InboxStatus.SIGNED, items[0].status)
-        assertEquals("deadbeef", items[0].rawHex)
     }
 
     @Test
@@ -87,7 +77,7 @@ class InboxDaoTest {
 
     @Test
     fun updateParsedFields_updatesOnlyAmountAndNetwork() = runTest {
-        dao.upsert(makeItem(id = "event1", status = InboxStatus.SIGNED, rawHex = "abc", network = "main"))
+        dao.insertIgnore(makeItem(id = "event1", status = InboxStatus.SIGNED, rawHex = "abc", network = "main"))
         dao.updateParsedFields("event1", "0.12340000 BTC", "test")
 
         val items = dao.getAll().first()
@@ -99,7 +89,7 @@ class InboxDaoTest {
 
     @Test
     fun updateStatus_changesOnlyStatus() = runTest {
-        dao.upsert(makeItem())
+        dao.insertIgnore(makeItem())
         dao.updateStatus("event1", InboxStatus.SIGNING)
         val items = dao.getAll().first()
         assertEquals(InboxStatus.SIGNING, items[0].status)
@@ -108,7 +98,7 @@ class InboxDaoTest {
 
     @Test
     fun updateSigned_setsStatusRawHexNetwork() = runTest {
-        dao.upsert(makeItem())
+        dao.insertIgnore(makeItem())
         dao.updateSigned("event1", InboxStatus.SIGNED, "cafebabe", "test")
         val items = dao.getAll().first()
         assertEquals(InboxStatus.SIGNED, items[0].status)
@@ -118,7 +108,7 @@ class InboxDaoTest {
 
     @Test
     fun updateBroadcast_setsStatusAndTxid() = runTest {
-        dao.upsert(makeItem(status = InboxStatus.SIGNED, rawHex = "deadbeef"))
+        dao.insertIgnore(makeItem(status = InboxStatus.SIGNED, rawHex = "deadbeef"))
         dao.updateBroadcast("event1", InboxStatus.BROADCAST, "abc123", "testnet4")
         val items = dao.getAll().first()
         assertEquals(InboxStatus.BROADCAST, items[0].status)
@@ -129,28 +119,20 @@ class InboxDaoTest {
 
     @Test
     fun delete_removesItem() = runTest {
-        dao.upsert(makeItem())
+        dao.insertIgnore(makeItem())
         dao.delete("event1")
         val items = dao.getAll().first()
         assertTrue(items.isEmpty())
     }
 
     @Test
-    fun exists_returnsCorrectCount() = runTest {
-        assertEquals(0, dao.exists("event1"))
-        dao.upsert(makeItem())
-        assertEquals(1, dao.exists("event1"))
-        assertEquals(0, dao.exists("nonexistent"))
-    }
-
-    @Test
     fun deleteExpired_removesOnlyExpired() = runTest {
         val now = 1710700000L
-        dao.upsert(makeItem(id = "a1", receivedAt = now - 7200))
-        dao.upsert(makeItem(id = "a2", receivedAt = now - 90000))
-        dao.upsert(makeItem(id = "a3", status = InboxStatus.SIGNED, receivedAt = now - 86400 * 3))
-        dao.upsert(makeItem(id = "a4", status = InboxStatus.BROADCAST, receivedAt = now - 86400 * 8))
-        dao.upsert(makeItem(id = "a5", status = InboxStatus.FAILED, receivedAt = now - 90000))
+        dao.insertIgnore(makeItem(id = "a1", receivedAt = now - 7200))
+        dao.insertIgnore(makeItem(id = "a2", receivedAt = now - 90000))
+        dao.insertIgnore(makeItem(id = "a3", status = InboxStatus.SIGNED, receivedAt = now - 86400 * 3))
+        dao.insertIgnore(makeItem(id = "a4", status = InboxStatus.BROADCAST, receivedAt = now - 86400 * 8))
+        dao.insertIgnore(makeItem(id = "a5", status = InboxStatus.FAILED, receivedAt = now - 90000))
 
         dao.deleteExpired(
             pendingCutoff = now - 86400,
@@ -166,25 +148,25 @@ class InboxDaoTest {
 
     @Test
     fun getAll_orderedByReceivedAtDesc() = runTest {
-        dao.upsert(makeItem(id = "old", receivedAt = 100L))
-        dao.upsert(makeItem(id = "new", receivedAt = 300L))
-        dao.upsert(makeItem(id = "mid", receivedAt = 200L))
+        dao.insertIgnore(makeItem(id = "old", receivedAt = 100L))
+        dao.insertIgnore(makeItem(id = "new", receivedAt = 300L))
+        dao.insertIgnore(makeItem(id = "mid", receivedAt = 200L))
         val items = dao.getAll().first()
         assertEquals(listOf("new", "mid", "old"), items.map { it.id })
     }
 
     @Test
     fun getAllOnce_returnsCurrentSnapshot() = runTest {
-        dao.upsert(makeItem(id = "a"))
-        dao.upsert(makeItem(id = "b"))
+        dao.insertIgnore(makeItem(id = "a"))
+        dao.insertIgnore(makeItem(id = "b"))
         val items = dao.getAllOnce()
         assertEquals(2, items.size)
     }
 
     @Test
     fun getAll_excludesDeletedItems() = runTest {
-        dao.upsert(makeItem(id = "visible", status = InboxStatus.PENDING))
-        dao.upsert(makeItem(id = "hidden", status = InboxStatus.DELETED))
+        dao.insertIgnore(makeItem(id = "visible", status = InboxStatus.PENDING))
+        dao.insertIgnore(makeItem(id = "hidden", status = InboxStatus.DELETED))
         val items = dao.getAll().first()
         assertEquals(1, items.size)
         assertEquals("visible", items[0].id)
@@ -192,8 +174,8 @@ class InboxDaoTest {
 
     @Test
     fun getAllOnce_includesDeletedItems() = runTest {
-        dao.upsert(makeItem(id = "visible", status = InboxStatus.PENDING))
-        dao.upsert(makeItem(id = "hidden", status = InboxStatus.DELETED))
+        dao.insertIgnore(makeItem(id = "visible", status = InboxStatus.PENDING))
+        dao.insertIgnore(makeItem(id = "hidden", status = InboxStatus.DELETED))
         val items = dao.getAllOnce()
         assertEquals(2, items.size)
     }
@@ -201,8 +183,8 @@ class InboxDaoTest {
     @Test
     fun deleteExpired_removesOldDeletedItems() = runTest {
         val now = 1710700000L
-        dao.upsert(makeItem(id = "d1", status = InboxStatus.DELETED, receivedAt = now - 90000))
-        dao.upsert(makeItem(id = "d2", status = InboxStatus.DELETED, receivedAt = now - 7200))
+        dao.insertIgnore(makeItem(id = "d1", status = InboxStatus.DELETED, receivedAt = now - 90000))
+        dao.insertIgnore(makeItem(id = "d2", status = InboxStatus.DELETED, receivedAt = now - 7200))
         dao.deleteExpired(
             pendingCutoff = now - 86400,
             signedCutoff = now - 86400 * 7,
@@ -214,7 +196,7 @@ class InboxDaoTest {
 
     @Test
     fun softDelete_changesStatusToDeleted() = runTest {
-        dao.upsert(makeItem(id = "event1", status = InboxStatus.PENDING))
+        dao.insertIgnore(makeItem(id = "event1", status = InboxStatus.PENDING))
         dao.updateStatus("event1", InboxStatus.DELETED)
         // Not visible in getAll (UI query)
         val uiItems = dao.getAll().first()

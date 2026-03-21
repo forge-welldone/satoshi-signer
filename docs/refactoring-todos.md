@@ -463,13 +463,15 @@
 
 ---
 
-### 32. Remove unused DAO methods (exists, upsert)
+### ~~32. Remove unused DAO methods (exists, upsert)~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `data/InboxDao.kt:26-30` |
 | **Consensus** | Android Engineer |
 
-`exists()` and `upsert()` declared but only used in tests, not production. Production uses `insertIgnore` and targeted updates.
+~~`exists()` and `upsert()` declared but only used in tests, not production. Production uses `insertIgnore` and targeted updates.~~
+
+**Fixed:** Removed `exists()` and `upsert()` from `InboxDao`. Replaced all `dao.upsert()` calls in `InboxDaoTest` with `dao.insertIgnore()`. Removed `exists_returnsCorrectCount` test and two upsert-specific tests, added `insertIgnore_andGetAll_returnsItem` replacement.
 
 ---
 

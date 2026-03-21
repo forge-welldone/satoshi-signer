@@ -4,8 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Upsert
-
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -21,12 +19,6 @@ interface InboxDao {
 
     @Query("UPDATE inbox_items SET amount = :amount, network = :network WHERE id = :id")
     suspend fun updateParsedFields(id: String, amount: String, network: String)
-
-    @Query("SELECT COUNT(*) FROM inbox_items WHERE id = :id")
-    suspend fun exists(id: String): Int
-
-    @Upsert
-    suspend fun upsert(item: InboxItemEntity)
 
     @Query("UPDATE inbox_items SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: InboxStatus)
