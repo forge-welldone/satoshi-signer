@@ -423,15 +423,17 @@
 
 ---
 
-### 29. Consolidate clipboard copy pattern
+### ~~29. Consolidate clipboard copy pattern~~ ✅ FIXED
 | | |
 |---|---|
 | **Files** | `ui/HomeScreen.kt:86-89`, `ui/SigningScreen.kt:121-124`, `ui/ErrorScreen.kt:36-38` |
 | **Consensus** | Rubyist |
 
-Same ClipboardManager + ClipData + Toast pattern repeated 3 times.
+~~Same ClipboardManager + ClipData + Toast pattern repeated 3 times.~~
 
-**Fix:** Extract `copyToClipboard(context, label, text)` utility.
+~~**Fix:** Extract `copyToClipboard(context, label, text)` utility.~~
+
+**Fixed:** Extracted `copyToClipboard(context, label, text, toast)` into `ui/Formatters.kt`. Replaced 4 duplicate patterns (HomeScreen, SigningScreen, ErrorScreen, EncryptPassphraseScreen). Removed unused `ClipData`/`ClipboardManager`/`Toast` imports from all 4 files.
 
 ---
 

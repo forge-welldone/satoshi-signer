@@ -1,7 +1,5 @@
 package com.remotesigner.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.app.Activity
 import android.content.ContextWrapper
@@ -115,9 +113,7 @@ fun SigningScreen(
                     ) {
                         Text("Debug Log:", style = MaterialTheme.typography.labelMedium)
                         TextButton(onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("debug log", log))
-                            Toast.makeText(context, "Log copied", Toast.LENGTH_SHORT).show()
+                            copyToClipboard(context, "debug log", log, "Log copied")
                         }) {
                             Text("Copy", fontSize = 12.sp)
                         }

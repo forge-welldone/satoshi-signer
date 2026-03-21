@@ -1,9 +1,6 @@
 package com.remotesigner.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -50,9 +47,7 @@ fun ErrorScreen(
             Text(message, fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 14.sp)
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedButton(onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("error", message))
-                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                copyToClipboard(context, "error", message)
             }) {
                 Text("Copy Error")
             }

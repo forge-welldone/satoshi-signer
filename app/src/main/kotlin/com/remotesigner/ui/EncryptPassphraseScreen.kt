@@ -1,9 +1,6 @@
 package com.remotesigner.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -122,9 +119,7 @@ fun EncryptPassphraseScreen(
 
                 OutlinedButton(
                     onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("encrypted passphrase", encryptedResult))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        copyToClipboard(context, "encrypted passphrase", encryptedResult!!, "Copied to clipboard")
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {

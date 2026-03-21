@@ -1,11 +1,8 @@
 package com.remotesigner.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -85,9 +82,7 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 TextButton(onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("npub", npub))
-                    Toast.makeText(context, "Copied npub", Toast.LENGTH_SHORT).show()
+                    copyToClipboard(context, "npub", npub, "Copied npub")
                 }) {
                     Text("Copy")
                 }
