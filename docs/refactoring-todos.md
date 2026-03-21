@@ -475,13 +475,15 @@
 
 ---
 
-### 33. Enable R8 minification for release builds
+### ~~33. Enable R8 minification for release builds~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `app/build.gradle.kts:29` |
 | **Consensus** | System Architect, Android Engineer (2/4) |
 
-`isMinifyEnabled = false` means release APK ships with full debug symbols. Requires ProGuard rules for Chaquopy, Room, and secp256k1-kmp.
+~~`isMinifyEnabled = false` means release APK ships with full debug symbols. Requires ProGuard rules for Chaquopy, Room, and secp256k1-kmp.~~
+
+**Fixed:** Enabled R8 with `isMinifyEnabled = true` and `isShrinkResources = true` in the release build type. Created `app/proguard-rules.pro` with keep rules for: Chaquopy bridge classes accessed from Python via reflection (SigningBridge, UsbBridge, SigningCallback, SigningCallbackImpl), secp256k1-kmp JNI classes, ZXing, and dontwarn rules for Google Tink's compile-only Error Prone annotations. Release APK reduced from 68MB to 40MB (41% smaller).
 
 ---
 
