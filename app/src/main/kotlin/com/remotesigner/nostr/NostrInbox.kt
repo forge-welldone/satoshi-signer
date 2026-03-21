@@ -12,8 +12,6 @@ fun formatRelativeTime(unixSeconds: Long): String {
     }
 }
 
-fun formatBtcAmount(satoshis: Long): String = "%.8f BTC".format(satoshis / 100_000_000.0)
-
 fun truncateNpub(npub: String): String {
     return if (npub.length > 16) "${npub.take(12)}...${npub.takeLast(4)}" else npub
 }

@@ -2,7 +2,7 @@ package com.remotesigner.data
 
 import com.remotesigner.bridge.PythonBridgeInterface
 
-import com.remotesigner.nostr.formatBtcAmount
+import com.remotesigner.ui.formatBtcAmount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext

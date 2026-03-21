@@ -411,13 +411,15 @@
 
 ---
 
-### 28. Consolidate formatBtc / formatBtcAmount
+### ~~28. Consolidate formatBtc / formatBtcAmount~~ ✅ FIXED
 | | |
 |---|---|
 | **Files** | `ui/TransactionReviewScreen.kt:211`, `nostr/NostrInbox.kt:42` |
 | **Consensus** | System Architect, Android Engineer, Rubyist (3/4) |
 
-Two functions doing `"%.8f BTC".format(satoshis / 100_000_000.0)`. Create a shared `Formatters.kt` utility.
+~~Two functions doing `"%.8f BTC".format(satoshis / 100_000_000.0)`. Create a shared `Formatters.kt` utility.~~
+
+**Fixed:** Created `ui/Formatters.kt` with single `formatBtcAmount()` function. Removed duplicate from `NostrInbox.kt` and private `formatBtc()` from `TransactionReviewScreen.kt`. Updated imports in `InboxRepository` and `InboxRepositoryTest`. 5 JVM unit tests added in `FormattersTest.kt`.
 
 ---
 

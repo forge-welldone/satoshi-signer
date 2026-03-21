@@ -117,11 +117,11 @@ fun TransactionReviewScreen(
             Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Fee:")
-                Text(formatBtc(state.fee))
+                Text(formatBtcAmount(state.fee))
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Total sent:", style = MaterialTheme.typography.titleMedium)
-                Text(formatBtc(state.totalSent), style = MaterialTheme.typography.titleMedium)
+                Text(formatBtcAmount(state.totalSent), style = MaterialTheme.typography.titleMedium)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -176,7 +176,7 @@ private fun InputRow(input: TxInput, network: String) {
             },
             style = MaterialTheme.typography.bodyMedium,
         )
-        Text(formatBtc(input.amount), style = MaterialTheme.typography.bodyMedium)
+        Text(formatBtcAmount(input.amount), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -195,7 +195,7 @@ private fun OutputRow(output: TxOutput, prefix: String, network: String) {
             },
             style = MaterialTheme.typography.bodyMedium,
         )
-        Text(formatBtc(output.amount), style = MaterialTheme.typography.bodyMedium)
+        Text(formatBtcAmount(output.amount), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -231,9 +231,6 @@ private fun SignerRow(signer: SignerInfo, onTap: () -> Unit) {
     }
 }
 
-private fun formatBtc(satoshis: Long): String {
-    return "%.8f BTC".format(satoshis / 100_000_000.0)
-}
 
 private fun shortenAddress(address: String): String {
     return if (address.length > 20) {

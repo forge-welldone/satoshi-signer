@@ -6,7 +6,7 @@ import com.remotesigner.bridge.ParsedPsbtResult
 import com.remotesigner.bridge.PythonBridgeInterface
 import com.remotesigner.bridge.SigningCallback
 import com.remotesigner.bridge.TxOutput
-import com.remotesigner.nostr.formatBtcAmount
+import com.remotesigner.ui.formatBtcAmount
 import com.remotesigner.usb.SigningBridge
 import kotlinx.coroutines.test.runTest
 import org.junit.After
