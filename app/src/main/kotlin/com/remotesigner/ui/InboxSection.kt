@@ -10,8 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.remotesigner.nostr.InboxItemEntity
-import com.remotesigner.nostr.InboxStatus
+import com.remotesigner.data.InboxItemEntity
+import com.remotesigner.data.InboxStatus
 import com.remotesigner.nostr.formatRelativeTime
 
 @Composable

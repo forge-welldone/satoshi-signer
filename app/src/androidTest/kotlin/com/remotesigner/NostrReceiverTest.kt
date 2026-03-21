@@ -2,6 +2,7 @@ package com.remotesigner
 
 import android.util.Base64
 import androidx.test.platform.app.InstrumentationRegistry
+import com.remotesigner.data.InboxItemEntity
 import com.remotesigner.nostr.*
 import fr.acinq.secp256k1.Secp256k1
 import kotlinx.coroutines.CoroutineScope

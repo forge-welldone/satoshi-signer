@@ -110,46 +110,46 @@ object TestFixtures {
     )
 
     val sampleInboxItems = listOf(
-        com.remotesigner.nostr.InboxItemEntity(
+        com.remotesigner.data.InboxItemEntity(
             id = "event1",
             psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
             label = "Payment to Alice",
             amount = "0.00500000 BTC",
             senderNpub = "npub1a3x7...k9f2",
             receivedAt = System.currentTimeMillis() / 1000 - 120, // 2 min ago
-            status = com.remotesigner.nostr.InboxStatus.PENDING,
+            status = com.remotesigner.data.InboxStatus.PENDING,
         ),
-        com.remotesigner.nostr.InboxItemEntity(
+        com.remotesigner.data.InboxItemEntity(
             id = "event2",
             psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
             label = "Unsigned transaction",
             amount = "0.10000000 BTC",
             senderNpub = "npub1b4y8...m8g3",
             receivedAt = System.currentTimeMillis() / 1000 - 900, // 15 min ago
-            status = com.remotesigner.nostr.InboxStatus.FAILED,
+            status = com.remotesigner.data.InboxStatus.FAILED,
         ),
     )
 
-    val signedInboxItem = com.remotesigner.nostr.InboxItemEntity(
+    val signedInboxItem = com.remotesigner.data.InboxItemEntity(
         id = "event3",
         psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
         label = "Payment to Bob",
         amount = "0.01000000 BTC",
         senderNpub = "npub1c5z9...n7h4",
         receivedAt = System.currentTimeMillis() / 1000 - 300,
-        status = com.remotesigner.nostr.InboxStatus.SIGNED,
+        status = com.remotesigner.data.InboxStatus.SIGNED,
         rawHex = "0200000001deadbeef",
         network = "test",
     )
 
-    val broadcastInboxItem = com.remotesigner.nostr.InboxItemEntity(
+    val broadcastInboxItem = com.remotesigner.data.InboxItemEntity(
         id = "event4",
         psbtBytes = byteArrayOf(0x70, 0x73, 0x62, 0x74, 0xff.toByte()),
         label = "Payment to Carol",
         amount = "0.00250000 BTC",
         senderNpub = "npub1d6a0...p8j5",
         receivedAt = System.currentTimeMillis() / 1000 - 600,
-        status = com.remotesigner.nostr.InboxStatus.BROADCAST,
+        status = com.remotesigner.data.InboxStatus.BROADCAST,
         rawHex = "0200000001cafebabe",
         txid = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
         network = "main",

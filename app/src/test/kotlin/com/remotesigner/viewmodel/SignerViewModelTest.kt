@@ -12,8 +12,8 @@ import com.remotesigner.bridge.TxInput
 import com.remotesigner.bridge.TxOutput
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
-import com.remotesigner.nostr.InboxItemEntity
-import com.remotesigner.nostr.InboxStatus
+import com.remotesigner.data.InboxItemEntity
+import com.remotesigner.data.InboxStatus
 import com.remotesigner.nostr.NostrKeyManager
 import com.remotesigner.usb.TrezorUsbManager
 import io.mockk.coEvery

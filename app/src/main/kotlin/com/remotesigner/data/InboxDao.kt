@@ -5,8 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
-import com.remotesigner.nostr.InboxItemEntity
-import com.remotesigner.nostr.InboxStatus
+
 import kotlinx.coroutines.flow.Flow
 
 @Dao

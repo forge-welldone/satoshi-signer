@@ -12,8 +12,8 @@ import com.remotesigner.bridge.SigningResult
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
 import com.remotesigner.nfc.NfcReadResult
-import com.remotesigner.nostr.InboxItemEntity
-import com.remotesigner.nostr.InboxStatus
+import com.remotesigner.data.InboxItemEntity
+import com.remotesigner.data.InboxStatus
 import com.remotesigner.nostr.NostrKeyManager
 import com.remotesigner.nostr.NostrReceiver
 import com.remotesigner.usb.SigningBridge

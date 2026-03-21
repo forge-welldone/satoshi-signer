@@ -4,8 +4,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.remotesigner.data.AppDatabase
 import com.remotesigner.data.InboxDao
-import com.remotesigner.nostr.InboxItemEntity
-import com.remotesigner.nostr.InboxStatus
+import com.remotesigner.data.InboxItemEntity
+import com.remotesigner.data.InboxStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After

@@ -85,7 +85,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - `app/src/main/kotlin/com/remotesigner/bridge/` — Python bridge (`PythonBridge`, `PythonBridgeInterface`, `SigningCallbackImpl`), `SigningOrchestrator` (USB lifecycle + signing flow), `BridgeModels` (typed response models + shared domain types)
 - `app/src/main/kotlin/com/remotesigner/data/` — Room database, entities (`Contact`, `ContactFingerprint`, `InboxItemEntity`), DAOs, fingerprint validation, `ContactRepository`, `InboxRepository`
 - `app/src/main/kotlin/com/remotesigner/nfc/` — NFC NDEF text parsing (`NdefTextParser`, `NfcReadResult`)
-- `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, inbox model)
+- `app/src/main/kotlin/com/remotesigner/nostr/` — Nostr transport (keypair, NIP-04 crypto, WebSocket receiver, relay status, inbox display helpers)
 - `app/src/main/kotlin/com/remotesigner/broadcast/` — Kotlin broadcaster (`TransactionBroadcaster`, `BroadcastResult`)
 - `app/src/main/kotlin/com/remotesigner/viewmodel/` — `SignerViewModel` (composition root), `Models.kt` (`AppState` sealed class, `PassphraseRequest`, `AccountPathRequest`), `SignerViewModelFactory`
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, script_utils, usb_transport, trezor_ui)

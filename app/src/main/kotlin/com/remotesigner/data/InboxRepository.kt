@@ -1,8 +1,7 @@
 package com.remotesigner.data
 
 import com.remotesigner.bridge.PythonBridgeInterface
-import com.remotesigner.nostr.InboxItemEntity
-import com.remotesigner.nostr.InboxStatus
+
 import com.remotesigner.nostr.formatBtcAmount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow

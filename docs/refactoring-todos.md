@@ -399,13 +399,15 @@
 
 ---
 
-### 27. Move InboxItemEntity to data package
+### ~~27. Move InboxItemEntity to data package~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `nostr/NostrInbox.kt` → `data/InboxItemEntity.kt` |
 | **Consensus** | System Architect, Rubyist (2/4) |
 
-Room entity in `nostr` package creates circular dependency with `data` package. Entity belongs with other Room entities.
+~~Room entity in `nostr` package creates circular dependency with `data` package. Entity belongs with other Room entities.~~
+
+**Fixed:** Moved `InboxItemEntity` and `InboxStatus` enum to `data/InboxItemEntity.kt`. `RelayStatus` enum and utility functions (`formatRelativeTime`, `formatBtcAmount`, `truncateNpub`) remain in `nostr/NostrInbox.kt` where they belong. Updated imports across 13 source and test files.
 
 ---
 

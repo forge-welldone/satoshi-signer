@@ -2,6 +2,7 @@ package com.remotesigner.nostr
 
 import android.util.Base64
 import android.util.Log
+import com.remotesigner.data.InboxItemEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow

@@ -2,7 +2,7 @@ package com.remotesigner
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import com.remotesigner.nostr.InboxItemEntity
+import com.remotesigner.data.InboxItemEntity
 import com.remotesigner.nostr.RelayStatus
 import com.remotesigner.ui.HomeScreen
 import com.remotesigner.ui.InboxSection
@@ -64,7 +64,7 @@ class InboxScreenTest {
     @Test
     fun inboxItemCard_signedStatus_hidesSignButton() {
         val signedItem = TestFixtures.sampleInboxItems[0].copy(
-            status = com.remotesigner.nostr.InboxStatus.SIGNED
+            status = com.remotesigner.data.InboxStatus.SIGNED
         )
         composeTestRule.setContent {
             SatoshiSignerTheme {

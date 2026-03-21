@@ -232,6 +232,7 @@ app/src/main/
 │   │   ├── Contact.kt               # Contact, ContactFingerprint, ContactWithFingerprints
 │   │   ├── ContactDao.kt            # Contact DAO
 │   │   ├── ContactRepository.kt     # Contact CRUD + signer enrichment
+│   │   ├── InboxItemEntity.kt       # InboxItemEntity Room entity + InboxStatus enum
 │   │   ├── InboxDao.kt              # Inbox DAO
 │   │   ├── InboxRepository.kt       # Inbox event handling + status updates
 │   │   └── FingerprintValidator.kt  # Fingerprint validation (8 hex chars)
@@ -244,7 +245,7 @@ app/src/main/
 │   │   ├── NostrKeyManager.kt      # Random secp256k1 keypair storage
 │   │   ├── Nip04.kt                # NIP-04 encryption/decryption
 │   │   ├── NostrEvent.kt           # Event model
-│   │   ├── NostrInbox.kt           # Inbox state management
+│   │   ├── NostrInbox.kt           # RelayStatus enum, inbox display helpers
 │   │   └── Bech32.kt               # Bech32 encoding (npub)
 │   ├── nfc/NdefTextParser.kt       # NFC NDEF text parsing (passphrase import)
 │   └── ui/

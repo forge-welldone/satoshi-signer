@@ -27,7 +27,7 @@ import com.google.zxing.qrcode.QRCodeWriter
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.remotesigner.nostr.InboxItemEntity
+import com.remotesigner.data.InboxItemEntity
 import com.remotesigner.nostr.RelayStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
