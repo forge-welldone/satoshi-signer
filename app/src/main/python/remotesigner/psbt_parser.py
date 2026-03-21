@@ -230,8 +230,8 @@ def _analyze_signing_status(psbt: PSBT) -> tuple:
 
     for inp_scope in psbt.inputs:
         signed_pubs = set(inp_scope.partial_sigs.keys()) if inp_scope.partial_sigs else set()
-        # taproot_sigs is a dict keyed by (pub, leaf_hash) tuples
-        has_tap_sig = bool(inp_scope.taproot_sigs) if inp_scope.taproot_sigs else False
+        # Build set of pubkeys that have taproot script-path signatures
+        tap_signed_pubs = {pub for (pub, leaf) in inp_scope.taproot_sigs} if inp_scope.taproot_sigs else set()
 
         # Extract m-of-n from multisig scripts
         ms = inp_scope.witness_script or inp_scope.redeem_script
@@ -253,7 +253,7 @@ def _analyze_signing_status(psbt: PSBT) -> tuple:
             fp = deriv.fingerprint.hex()
             if fp not in all_fingerprints:
                 all_fingerprints[fp] = {"fingerprint": fp, "signed": False}
-            if has_tap_sig:
+            if pub in tap_signed_pubs:
                 all_fingerprints[fp]["signed"] = True
 
     signers = list(all_fingerprints.values())

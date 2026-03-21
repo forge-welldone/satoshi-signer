@@ -106,7 +106,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 
 - **Chaquopy 17.0.0** — Embeds Python 3.13 in Android
 - **trezor 0.13.9** (Python) — Official Trezor signing library
-- **embit ≥0.7** (Python) — Lightweight PSBT parsing
+- **embit 0.8.0** (Python) — Lightweight PSBT parsing
 - **Compose BOM 2024.12.01** — Jetpack Compose UI
 - **OkHttp 4.12.0** — WebSocket client for Nostr relay connections
 - **secp256k1-kmp 0.22.0** (`fr.acinq.secp256k1:secp256k1-kmp-jni-android`) — secp256k1 ECDH for NIP-04 encryption/decryption. Lightweight JNI wrapper around Bitcoin's libsecp256k1.

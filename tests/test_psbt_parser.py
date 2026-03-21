@@ -11,17 +11,6 @@ PSBTS_DIR = os.path.join(os.path.dirname(__file__), "psbts")
 #   output 1: 600000 sats change (P2WPKH, bip32 derivation with internal chain index 1)
 # Fee: 100000 sats
 # Generated with embit using seed 000102...0f, master fingerprint 3442193e
-TEST_PSBT_B64 = (
-    "cHNidP8BAHQCAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAD/////AqC7DQAAAAAAGXapFHaKQLvXQMvoHZiOcd4qTVxxOWsdiKzAJwkA"
-    "AAAAABYA FJIsKEHyfEd4+Xumxx4KeWhabyxAAAAAAAABAR8AahgAAAAAABYAF"
-    "OrbrH82w345NhFot6ruPLJKJTEtIgYCObSzonzR3YmTA41etkSSILNQwyrmL+"
-    "wIM7k9uKSQMcUYNEIZPiwAAIAAAACAAAAAgAAAAAAAAAAAAAAiAgOXV8Lhezbm"
-    "ViqgyLnguDgeUu7H2VfwFP0qTaq+kSbThg0Qhk+LAAAgAAAAIAAAACAAQAAAA"
-    "AAAAAA"
-)
-
-# Compact single-string version (no spaces/newlines issues)
 TEST_PSBT_B64 = "cHNidP8BAHQCAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/////AqC7DQAAAAAAGXapFHaKQLvXQMvoHZiOcd4qTVxxOWsdiKzAJwkAAAAAABYAFJIsKEHyfEd4+Xumxx4KeWhabyxAAAAAAAABAR8AahgAAAAAABYAFOrbrH82w345NhFot6ruPLJKJTEtIgYCObSzonzR3YmTA41etkSSILNQwyrmL+wIM7k9uKSQMcUYNEIZPiwAAIAAAACAAAAAgAAAAAAAAAAAAAAiAgOXV8LhezbmViqgy7LnguDgeUu7H2VfwFP0qTaq+kSbThg0Qhk+LAAAgAAAAIAAAACAAQAAAAAAAAAA"
 
 
@@ -259,6 +248,88 @@ class TestParseTestnetPsbt:
                 assert out["address"].startswith("tb1"), (
                     f"Output address {out['address']} should start with tb1"
                 )
+
+
+class TestTaprootSignatureMarking:
+    """Taproot signing status should mark only the specific signers whose
+    pubkeys appear in taproot_sigs, not all signers (#37)."""
+
+    @pytest.fixture
+    def _build_taproot_psbt(self):
+        """Returns a builder function that creates a 3-key taproot PSBT
+        with a configurable set of signed pubkey indices."""
+        from embit.psbt import PSBT, DerivationPath
+        from embit.transaction import Transaction, TransactionInput, TransactionOutput
+        from embit.script import p2wpkh
+        from embit import ec
+        from io import BytesIO
+        import hashlib
+
+        keys = [ec.PrivateKey(hashlib.sha256(f"taproot-key-{i}".encode()).digest())
+                for i in range(3)]
+        # x-only pubkeys for taproot
+        pubs = [ec.PublicKey.from_xonly(k.get_public_key().xonly()) for k in keys]
+
+        def build(signed_indices):
+            fake_txid = hashlib.sha256(b"taproot-fixture-prevtx").digest()
+            out_script = p2wpkh(keys[0].get_public_key())
+            tx = Transaction(
+                version=2,
+                vin=[TransactionInput(fake_txid, 0, sequence=0xfffffffd)],
+                vout=[TransactionOutput(90000, out_script)],
+                locktime=0,
+            )
+            psbt = PSBT(tx)
+            psbt.inputs[0].witness_utxo = TransactionOutput(100000, out_script)
+
+            # Taproot BIP32 derivations: unique fingerprint per signer
+            HARDENED = 0x80000000
+            leaf_hash = hashlib.sha256(b"tapleaf").digest()
+            for i, pub in enumerate(pubs):
+                fp = bytes([i + 1, 0, 0, 0])
+                path = [86 | HARDENED, 0 | HARDENED, 0 | HARDENED, 0, i]
+                psbt.inputs[0].taproot_bip32_derivations[pub] = (
+                    [leaf_hash], DerivationPath(fp, path)
+                )
+
+            # Add taproot script-path sigs for selected indices
+            dummy_sig = b'\x00' * 64
+            for idx in signed_indices:
+                psbt.inputs[0].taproot_sigs[(pubs[idx], leaf_hash)] = dummy_sig
+
+            buf = BytesIO()
+            psbt.write_to(buf)
+            return buf.getvalue()
+
+        return build
+
+    def test_one_of_three_signed(self, _build_taproot_psbt):
+        """Only the signer whose key is in taproot_sigs should be marked signed."""
+        psbt_bytes = _build_taproot_psbt([1])  # Only second signer signed
+        result = parse_psbt(psbt_bytes)
+        signers = result["signers"]
+        assert len(signers) == 3
+        signed = [s for s in signers if s["signed"]]
+        unsigned = [s for s in signers if not s["signed"]]
+        assert len(signed) == 1
+        assert len(unsigned) == 2
+        assert signed[0]["fingerprint"] == "02000000"
+
+    def test_all_three_signed(self, _build_taproot_psbt):
+        """All signers should be marked signed when all keys are present."""
+        psbt_bytes = _build_taproot_psbt([0, 1, 2])
+        result = parse_psbt(psbt_bytes)
+        signers = result["signers"]
+        assert all(s["signed"] for s in signers)
+        assert result["status"] == "fully_signed"
+
+    def test_none_signed(self, _build_taproot_psbt):
+        """No signers should be marked signed when no taproot sigs exist."""
+        psbt_bytes = _build_taproot_psbt([])
+        result = parse_psbt(psbt_bytes)
+        signers = result["signers"]
+        assert not any(s["signed"] for s in signers)
+        assert result["status"] == "unsigned"
 
 
 class TestPsbtSizeLimit:

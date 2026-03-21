@@ -13,10 +13,10 @@ import org.json.JSONObject
  */
 class PythonBridge : PythonBridgeInterface {
 
-    private val py = Python.getInstance()
-    private val parserModule: PyObject = py.getModule("remotesigner.psbt_parser")
-    private val signerModule: PyObject = py.getModule("remotesigner.signer")
-    private val jsonModule: PyObject = py.getModule("json")
+    private val py by lazy { Python.getInstance() }
+    private val parserModule: PyObject by lazy { py.getModule("remotesigner.psbt_parser") }
+    private val signerModule: PyObject by lazy { py.getModule("remotesigner.signer") }
+    private val jsonModule: PyObject by lazy { py.getModule("json") }
 
     override fun parsePsbt(psbtBytes: ByteArray): ParsedPsbtResult {
         val result = parserModule.callAttr("parse_psbt", psbtBytes)

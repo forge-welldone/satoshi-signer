@@ -485,47 +485,55 @@
 
 ---
 
-### 34. Lazy-initialize PythonBridge
+### ~~34. Lazy-initialize PythonBridge~~ ✅ FIXED
 | | |
 |---|---|
-| **File** | `viewmodel/SignerViewModel.kt:96` |
+| **File** | `bridge/PythonBridge.kt` |
 | **Consensus** | Android Engineer |
 
-`PythonBridge()` calls `Python.getInstance()` eagerly in ViewModel constructor, blocking the main thread on first launch.
+~~`PythonBridge()` calls `Python.getInstance()` eagerly in ViewModel constructor, blocking the main thread on first launch.~~
 
-**Fix:** `private val pythonBridge by lazy { PythonBridge() }`.
+~~**Fix:** `private val pythonBridge by lazy { PythonBridge() }`.~~
+
+**Fixed:** Made all 4 properties in `PythonBridge` lazy (`py`, `parserModule`, `signerModule`, `jsonModule`). Construction is now instant; Python runtime only initializes when `parsePsbt()` or `signPsbt()` is first called on a background thread. Can't make the instance itself lazy in `SignerViewModelFactory` because it's passed to multiple constructors immediately — but lazy properties achieve the same goal.
 
 ---
 
-### 35. Pin embit dependency version
+### ~~35. Pin embit dependency version~~ ✅ FIXED
 | | |
 |---|---|
 | **Files** | `requirements-dev.txt`, `app/build.gradle.kts` |
 | **Consensus** | Python Engineer |
 
-`embit>=0.7` is unpinned while `trezor==0.13.9` is pinned. A breaking embit change could silently break PSBT parsing.
+~~`embit>=0.7` is unpinned while `trezor==0.13.9` is pinned. A breaking embit change could silently break PSBT parsing.~~
+
+**Fixed:** Pinned `embit==0.8.0` in both `requirements-dev.txt` and `build.gradle.kts` Chaquopy config. Version matches the pre-built wheel in `app/pip_wheels/` and the currently resolved version.
 
 ---
 
-### 36. Fix dead TEST_PSBT_B64 assignment in test_psbt_parser.py
+### ~~36. Fix dead TEST_PSBT_B64 assignment in test_psbt_parser.py~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `tests/test_psbt_parser.py:14-25` |
 | **Consensus** | Python Engineer |
 
-First assignment contains a space in the base64 and is immediately overwritten by the corrected version. Dead code.
+~~First assignment contains a space in the base64 and is immediately overwritten by the corrected version. Dead code.~~
+
+**Fixed:** Removed the dead multi-line assignment (contained a stray space in the base64) and the now-unnecessary comment. Only the compact single-string version remains.
 
 ---
 
-### 37. Taproot signature marking is imprecise for multi-key taproot
+### ~~37. Taproot signature marking is imprecise for multi-key taproot~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `remotesigner/psbt_parser.py:230-235` |
 | **Consensus** | Python Engineer |
 
-When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marked signed regardless of which key actually signed.
+~~When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marked signed regardless of which key actually signed.~~
 
-**Fix:** Match specific pubkey in `taproot_sigs` against the derivation's pubkey.
+~~**Fix:** Match specific pubkey in `taproot_sigs` against the derivation's pubkey.~~
+
+**Fixed:** Replaced `has_tap_sig` boolean with `tap_signed_pubs` set built from `taproot_sigs` keys. Each signer's `signed` field is now set based on whether that signer's specific pubkey appears in the set. 3 tests added in `TestTaprootSignatureMarking` covering: one-of-three signed, all signed, and none signed.
 
 ---
 
