@@ -165,7 +165,7 @@ private fun AddContactDialog(
     var label by remember { mutableStateOf("") }
     var fingerprint by remember { mutableStateOf("") }
     val fpValid = FingerprintValidator.normalize(fingerprint) != null
-    val labelValid = label.trim().let { it.isNotEmpty() && it.length <= 50 }
+    val labelValid = label.trim().let { it.isNotEmpty() && it.length <= MAX_LABEL_LENGTH }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -174,7 +174,7 @@ private fun AddContactDialog(
             Column {
                 OutlinedTextField(
                     value = label,
-                    onValueChange = { if (it.length <= 50) label = it },
+                    onValueChange = { if (it.length <= MAX_LABEL_LENGTH) label = it },
                     label = { Text("Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -213,7 +213,7 @@ private fun EditContactDialog(
     var label by remember { mutableStateOf(contact.contact.label) }
     var npub by remember { mutableStateOf(contact.contact.npub ?: "") }
     var newFingerprint by remember { mutableStateOf("") }
-    val labelValid = label.trim().let { it.isNotEmpty() && it.length <= 50 }
+    val labelValid = label.trim().let { it.isNotEmpty() && it.length <= MAX_LABEL_LENGTH }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -222,7 +222,7 @@ private fun EditContactDialog(
             Column {
                 OutlinedTextField(
                     value = label,
-                    onValueChange = { if (it.length <= 50) label = it },
+                    onValueChange = { if (it.length <= MAX_LABEL_LENGTH) label = it },
                     label = { Text("Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),

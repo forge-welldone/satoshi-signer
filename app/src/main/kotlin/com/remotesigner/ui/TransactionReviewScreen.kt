@@ -262,7 +262,7 @@ private fun QuickAddContactDialog(
                 if (!showExisting) {
                     OutlinedTextField(
                         value = label,
-                        onValueChange = { if (it.length <= 50) label = it },
+                        onValueChange = { if (it.length <= MAX_LABEL_LENGTH) label = it },
                         label = { Text("Contact name") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),

@@ -3,6 +3,7 @@ package com.remotesigner.nostr
 import android.util.Base64
 import android.util.Log
 import com.remotesigner.data.InboxItemEntity
+import com.remotesigner.ui.SUBSCRIPTION_LOOKBACK_SECONDS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -103,7 +104,7 @@ class NostrReceiver(
 
     private fun sendSubscription(ws: WebSocket) {
         val hexPubkey = keyManager.getHexPubkey()
-        val since = System.currentTimeMillis() / 1000 - 86400
+        val since = System.currentTimeMillis() / 1000 - SUBSCRIPTION_LOOKBACK_SECONDS
         val req = """["REQ","psbt-inbox",{"kinds":[4],"#p":["$hexPubkey"],"since":$since}]"""
         Log.d(TAG, "Subscribing with pubkey=${hexPubkey.take(16)}... since=$since")
         ws.send(req)

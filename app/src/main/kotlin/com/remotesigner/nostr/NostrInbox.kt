@@ -1,5 +1,7 @@
 package com.remotesigner.nostr
 
+import com.remotesigner.ui.SECONDS_PER_DAY
+
 enum class RelayStatus { CONNECTING, CONNECTED, DISCONNECTED, ERROR }
 
 fun formatRelativeTime(unixSeconds: Long): String {
@@ -7,8 +9,8 @@ fun formatRelativeTime(unixSeconds: Long): String {
     return when {
         diff < 60 -> "just now"
         diff < 3600 -> "${diff / 60}m ago"
-        diff < 86400 -> "${diff / 3600}h ago"
-        else -> "${diff / 86400}d ago"
+        diff < SECONDS_PER_DAY -> "${diff / 3600}h ago"
+        else -> "${diff / SECONDS_PER_DAY}d ago"
     }
 }
 

@@ -437,15 +437,17 @@
 
 ---
 
-### 30. Extract magic numbers as named constants
+### ~~30. Extract magic numbers as named constants~~ ✅ FIXED
 | | |
 |---|---|
 | **File** | `viewmodel/SignerViewModel.kt` (lines 155, 292, 570), `nostr/NostrReceiver.kt:105` |
 | **Consensus** | Rubyist |
 
-`86_400`, `86_400 * 7`, `1_000_000` (fee threshold), `50` (label max), `86400` (subscription lookback).
+~~`86_400`, `86_400 * 7`, `1_000_000` (fee threshold), `50` (label max), `86400` (subscription lookback).~~
 
-**Fix:** Named constants: `PENDING_EXPIRY_SECONDS`, `SIGNED_EXPIRY_SECONDS`, `HIGH_FEE_THRESHOLD_SATS`, `MAX_LABEL_LENGTH`.
+~~**Fix:** Named constants: `PENDING_EXPIRY_SECONDS`, `SIGNED_EXPIRY_SECONDS`, `HIGH_FEE_THRESHOLD_SATS`, `MAX_LABEL_LENGTH`.~~
+
+**Fixed:** Extracted 6 named constants into `ui/Formatters.kt`: `SECONDS_PER_DAY`, `PENDING_EXPIRY_SECONDS`, `SIGNED_EXPIRY_SECONDS`, `SUBSCRIPTION_LOOKBACK_SECONDS`, `HIGH_FEE_THRESHOLD_SATS`, `MAX_LABEL_LENGTH`. Replaced all magic numbers across InboxRepository, NostrReceiver, NostrInbox, SignerViewModel, ContactRepository, TransactionReviewScreen, and ContactsScreen.
 
 ---
 

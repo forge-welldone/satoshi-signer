@@ -1,6 +1,7 @@
 package com.remotesigner.data
 
 import com.remotesigner.bridge.SignerInfo
+import com.remotesigner.ui.MAX_LABEL_LENGTH
 import kotlinx.coroutines.flow.Flow
 
 class ContactRepository(private val contactDao: ContactDao) {
@@ -33,7 +34,7 @@ class ContactRepository(private val contactDao: ContactDao) {
             }
         } else {
             val trimmed = label.trim()
-            if (trimmed.isEmpty() || trimmed.length > 50) return
+            if (trimmed.isEmpty() || trimmed.length > MAX_LABEL_LENGTH) return
             val id = contactDao.insertContact(Contact(label = trimmed))
             contactDao.insertFingerprint(
                 ContactFingerprint(contactId = id, fingerprint = normalized)
@@ -43,7 +44,7 @@ class ContactRepository(private val contactDao: ContactDao) {
 
     suspend fun updateContact(contactId: Long, newLabel: String, npub: String?) {
         val trimmed = newLabel.trim()
-        if (trimmed.isEmpty() || trimmed.length > 50) return
+        if (trimmed.isEmpty() || trimmed.length > MAX_LABEL_LENGTH) return
         contactDao.updateContact(
             Contact(id = contactId, label = trimmed, npub = npub?.trim()?.ifEmpty { null })
         )

@@ -2,6 +2,8 @@ package com.remotesigner.data
 
 import com.remotesigner.bridge.PythonBridgeInterface
 
+import com.remotesigner.ui.PENDING_EXPIRY_SECONDS
+import com.remotesigner.ui.SIGNED_EXPIRY_SECONDS
 import com.remotesigner.ui.formatBtcAmount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -17,8 +19,8 @@ class InboxRepository(
         inboxDao.resetSigning()
         val now = System.currentTimeMillis() / 1000
         inboxDao.deleteExpired(
-            pendingCutoff = now - 86_400,
-            signedCutoff = now - 86_400 * 7,
+            pendingCutoff = now - PENDING_EXPIRY_SECONDS,
+            signedCutoff = now - SIGNED_EXPIRY_SECONDS,
         )
         return inboxDao.getAllOnce().map { it.id }.toSet()
     }

@@ -12,6 +12,7 @@ import com.remotesigner.bridge.SigningResult
 import com.remotesigner.data.ContactRepository
 import com.remotesigner.data.InboxRepository
 import com.remotesigner.nfc.NfcReadResult
+import com.remotesigner.ui.HIGH_FEE_THRESHOLD_SATS
 import com.remotesigner.data.InboxItemEntity
 import com.remotesigner.data.InboxStatus
 import com.remotesigner.nostr.NostrKeyManager
@@ -179,7 +180,7 @@ class SignerViewModel(
             val signers = contactRepository.enrichSigners(result.signers)
 
             val warnings = mutableListOf<String>()
-            if (result.fee > 1_000_000) {
+            if (result.fee > HIGH_FEE_THRESHOLD_SATS) {
                 warnings.add("Fee is unusually high: ${"%.8f".format(result.fee / 100_000_000.0)} BTC")
             }
 
