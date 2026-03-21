@@ -14,6 +14,7 @@ class InboxRepository(
     val items: Flow<List<InboxItemEntity>> = inboxDao.getAll()
 
     suspend fun cleanupAndSeedIds(): Set<String> {
+        inboxDao.resetSigning()
         val now = System.currentTimeMillis() / 1000
         inboxDao.deleteExpired(
             pendingCutoff = now - 86_400,

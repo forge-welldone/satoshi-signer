@@ -46,4 +46,7 @@ interface InboxDao {
         OR (status IN ('SIGNED', 'BROADCAST') AND receivedAt < :signedCutoff)
     """)
     suspend fun deleteExpired(pendingCutoff: Long, signedCutoff: Long)
+
+    @Query("UPDATE inbox_items SET status = 'PENDING' WHERE status = 'SIGNING'")
+    suspend fun resetSigning()
 }
