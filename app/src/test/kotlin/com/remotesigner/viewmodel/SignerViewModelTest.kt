@@ -537,6 +537,20 @@ class SignerViewModelTest {
     }
 
     @Test
+    fun `signInboxItem works for item already in SIGNING status`() = runBlocking {
+        val item = testInboxItem(status = InboxStatus.SIGNING)
+        coEvery { pythonBridge.parsePsbt(item.psbtBytes) } returns testParseResult
+        coEvery { contactRepo.enrichSigners(any()) } answers { firstArg() }
+
+        vm.signInboxItem(item)
+        awaitState { it is AppState.TransactionReview }
+
+        val state = vm.state.value as AppState.TransactionReview
+        assertEquals("test", state.network)
+        coVerify { inboxRepo.updateStatus("event1", InboxStatus.SIGNING) }
+    }
+
+    @Test
     fun `signInboxItem sets description from label`() = runBlocking {
         val item = testInboxItem(label = "Payment for services")
         coEvery { pythonBridge.parsePsbt(item.psbtBytes) } returns testParseResult
