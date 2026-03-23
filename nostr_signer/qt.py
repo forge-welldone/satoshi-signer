@@ -1,5 +1,5 @@
 """
-Electrum Qt plugin: adds "Send to Signer" button to the transaction dialog.
+Electrum Qt plugin: adds "Send via Nostr" button to the transaction dialog.
 
 Uses electrum_aionostr for NIP-04 encryption and relay publishing,
 and electrum_ecc for key generation — matching the patterns in
@@ -61,7 +61,7 @@ class Plugin(BasePlugin, Logger):
 
     @hook
     def transaction_dialog(self, d: 'TxDialog'):
-        b = QPushButton(_("Send to Signer"))
+        b = QPushButton(_("Send via Nostr"))
         b.clicked.connect(lambda: self._on_send(d))
         d.buttons.insert(0, b)
 
@@ -154,6 +154,8 @@ class Plugin(BasePlugin, Logger):
         try:
             window.run_coroutine_dialog(coro, text)
             window.show_message(_("PSBT sent to signer."))
+            d.close()
+            window.send_tab.do_clear()
         except Exception as e:
             window.show_error(_("Failed to send: {}").format(str(e)))
 
@@ -194,15 +196,29 @@ class Plugin(BasePlugin, Logger):
 
         Returns (confirmed: bool, npub: str).
         """
-        d = WindowModalDialog(window, _("Send to Signer"))
+        d = WindowModalDialog(window, _("Send via Nostr"))
         layout = QVBoxLayout(d)
         layout.addWidget(QLabel(_("Send this PSBT to:")))
         npub_edit = QLineEdit()
         npub_edit.setText(npub)
         layout.addWidget(npub_edit)
-        layout.addWidget(QLabel(
-            _("Relays: {}").format(self.config.NOSTR_RELAYS)
-        ))
+
+        # Relays: hidden by default, toggle with "Show relays" link
+        relays_label = QLabel(self.config.NOSTR_RELAYS.replace(",", "\n"))
+        relays_label.setVisible(False)
+        toggle_btn = QPushButton(_("Show relays"))
+        toggle_btn.setFlat(True)
+        toggle_btn.setStyleSheet("text-decoration: underline; color: palette(link);")
+
+        def _toggle_relays():
+            visible = not relays_label.isVisible()
+            relays_label.setVisible(visible)
+            toggle_btn.setText(_("Hide relays") if visible else _("Show relays"))
+
+        toggle_btn.clicked.connect(_toggle_relays)
+        layout.addWidget(toggle_btn)
+        layout.addWidget(relays_label)
+
         layout.addLayout(Buttons(CancelButton(d), OkButton(d)))
 
         if not d.exec():
