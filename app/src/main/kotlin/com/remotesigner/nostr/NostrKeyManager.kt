@@ -2,6 +2,7 @@ package com.remotesigner.nostr
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import fr.acinq.secp256k1.Secp256k1
@@ -19,18 +20,21 @@ class NostrKeyManager(context: Context) {
     private val secp = Secp256k1.get()
 
     init {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        prefs = EncryptedSharedPreferences.create(
-            context,
-            "nostr_keys_encrypted",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-        // Delete old plaintext prefs (only after encrypted prefs created successfully)
+        prefs = try {
+            createEncryptedPrefs(context)
+        } catch (e: Exception) {
+            // Keystore key invalidated (e.g., debug signing cert changed) —
+            // delete corrupted file and recreate with fresh Keystore key
+            Log.w(TAG, "EncryptedSharedPreferences corrupted, recreating", e)
+            context.deleteSharedPreferences("nostr_keys_encrypted")
+            createEncryptedPrefs(context)
+        }
         context.deleteSharedPreferences("nostr_keys")
+    }
+
+    companion object {
+        private const val TAG = "NostrKeyManager"
+        private const val PREFS_NAME = "nostr_keys_encrypted"
     }
 
     /**
@@ -64,6 +68,19 @@ class NostrKeyManager(context: Context) {
 
     fun regenerateKeyPair() {
         prefs.edit().remove("nsec_hex").apply()
+    }
+
+    private fun createEncryptedPrefs(context: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
     }
 }
 
