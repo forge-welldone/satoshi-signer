@@ -91,15 +91,50 @@
         android:strokeLineJoin="round"
         android:fillColor="#00000000" />
 
-    <!-- TEST banner - diagonal strip -->
+    <!-- White background pill behind DEBUG text -->
     <path
-        android:pathData="M68,24 L84,40 L80,44 L64,28 Z"
-        android:fillColor="#FFEF4444" />
+        android:pathData="M27,44 L81,44 Q84,44 84,47 L84,61 Q84,64 81,64 L27,64 Q24,64 24,61 L24,47 Q24,44 27,44 Z"
+        android:fillColor="#EEFFFFFF" />
 
-    <!-- T -->
+    <!-- DEBUG label, centered on icon, bold red letters -->
+    <!-- D -->
     <path
-        android:pathData="M70.2,30.5 L72.2,28.5 M71.2,29.5 L71.2,32.5"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1"
-        android:strokeLineCap="round" />
+        android:pathData="M28,48 L28,60 L32,60 Q35,60 35,56 L35,52 Q35,48 32,48 Z"
+        android:strokeColor="#FFDC2626"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- E -->
+    <path
+        android:pathData="M43,48 L37,48 L37,60 L43,60 M37,54 L42,54"
+        android:strokeColor="#FFDC2626"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- B -->
+    <path
+        android:pathData="M45,48 L45,60 L49,60 Q52,60 52,57.5 Q52,55 49,54 L45,54 M45,48 L49,48 Q52,48 52,50.5 Q52,54 49,54"
+        android:strokeColor="#FFDC2626"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- U -->
+    <path
+        android:pathData="M54,48 L54,58 Q54,60 57,60 Q60,60 60,58 L60,48"
+        android:strokeColor="#FFDC2626"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- G -->
+    <path
+        android:pathData="M70,52 Q70,48 66,48 Q62,48 62,52 L62,56 Q62,60 66,60 Q70,60 70,56 L70,54.5 L67,54.5"
+        android:strokeColor="#FFDC2626"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
 </vector>
