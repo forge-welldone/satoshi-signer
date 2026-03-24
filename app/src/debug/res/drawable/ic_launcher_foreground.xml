@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Chip body: 36x36 rounded rect, centered at (54,54), corner radius 7 -->
+    <path
+        android:pathData="M43,36 L65,36 Q72,36 72,43 L72,65 Q72,72 65,72 L43,72 Q36,72 36,65 L36,43 Q36,36 43,36 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- Left traces (x: 36→28) at y = 46, 54, 62 -->
+    <path
+        android:pathData="M36,46 L28,46"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M36,54 L28,54"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M36,62 L28,62"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Right traces (x: 72→80) at y = 46, 54, 62 -->
+    <path
+        android:pathData="M72,46 L80,46"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M72,54 L80,54"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M72,62 L80,62"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Top traces (y: 36→28) at x = 46, 54, 62 -->
+    <path
+        android:pathData="M46,36 L46,28"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,36 L54,28"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M62,36 L62,28"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Bottom traces (y: 72→80) at x = 46, 54, 62 -->
+    <path
+        android:pathData="M46,72 L46,80"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,72 L54,80"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M62,72 L62,80"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Checkmark inside chip body -->
+    <path
+        android:pathData="M45,54 L51,60 L65,46"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- TEST banner - diagonal strip -->
+    <path
+        android:pathData="M68,24 L84,40 L80,44 L64,28 Z"
+        android:fillColor="#FFEF4444" />
+
+    <!-- T -->
+    <path
+        android:pathData="M70.2,30.5 L72.2,28.5 M71.2,29.5 L71.2,32.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1"
+        android:strokeLineCap="round" />
+</vector>

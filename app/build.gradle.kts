@@ -6,9 +6,27 @@ plugins {
     id("com.chaquo.python")
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.remotesigner"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(keystoreProperties.getProperty("storeFile", "../release.keystore"))
+            storePassword = keystoreProperties.getProperty("storePassword", "")
+            keyAlias = keystoreProperties.getProperty("keyAlias", "")
+            keyPassword = keystoreProperties.getProperty("keyPassword", "")
+        }
+    }
 
     defaultConfig {
         applicationId = "com.remotesigner"
@@ -24,7 +42,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

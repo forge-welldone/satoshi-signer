@@ -11,3 +11,5 @@ __pycache__/
 .worktrees/
 nostr_signer-*.zip
 .superpowers/
+release.keystore
+keystore.properties
