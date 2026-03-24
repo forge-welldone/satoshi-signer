@@ -444,4 +444,4 @@ python -m pytest tests/test_nostr_signer.py -v
 
 ## License
 
-TBD
+Apache License 2.0 — see [LICENSE](LICENSE) for details.
