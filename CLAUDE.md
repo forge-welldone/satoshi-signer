@@ -12,8 +12,14 @@ Satoshi Signer — an Android app for signing Bitcoin PSBTs with a Trezor hardwa
 # Build debug APK (Chaquopy auto-downloads Python 3.13 + pip deps on first build)
 ./gradlew assembleDebug
 
-# Build and install on connected device
+# Build release APK (requires keystore.properties, see "Build Variants" below)
+./gradlew assembleRelease
+
+# Install debug build on connected device (com.remotesigner.debug, "Satoshi Signer (Test)")
 ./gradlew installDebug
+
+# Install release build on connected device (com.remotesigner, "Satoshi Signer")
+./gradlew installRelease
 
 # Run Android smoke tests (requires running emulator)
 ./gradlew connectedDebugAndroidTest
@@ -45,6 +51,26 @@ Python test setup requires a venv: `python3 -m venv .venv && source .venv/bin/ac
 Desktop signing also requires `brew install libusb` (Trezor Safe 3 uses WebUSB on macOS).
 
 Android test setup requires a running emulator: `emulator -avd test_device -no-audio &`
+
+## Build Variants
+
+Two build variants can be installed side-by-side on the same device:
+
+| Variant | Application ID | App Name | Icon | Signing | R8 |
+|---------|---------------|----------|------|---------|-----|
+| **debug** | `com.remotesigner.debug` | Satoshi Signer (Test) | Blue/purple with "DEBUG" overlay | Debug keystore (auto) | Off |
+| **release** | `com.remotesigner` | Satoshi Signer | Orange/red gradient | Release keystore | On |
+
+**Release signing** requires `keystore.properties` in the project root (gitignored) pointing to `release.keystore`:
+
+```properties
+storeFile=../release.keystore
+storePassword=<password>
+keyAlias=release
+keyPassword=<password>
+```
+
+The release keystore must be backed up separately — losing it means the release app cannot be updated in place.
 
 ## Architecture
 
@@ -89,6 +115,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - `app/src/main/kotlin/com/remotesigner/broadcast/` — Kotlin broadcaster (`TransactionBroadcaster`, `BroadcastResult`)
 - `app/src/main/kotlin/com/remotesigner/viewmodel/` — `SignerViewModel` (composition root), `Models.kt` (`AppState` sealed class, `PassphraseRequest`, `AccountPathRequest`), `SignerViewModelFactory`
 - `app/src/main/python/remotesigner/` — Python modules (psbt_parser, signer, script_utils, usb_transport, trezor_ui)
+- `app/src/debug/res/` — Debug build variant overrides: blue/purple icon with "DEBUG" overlay, app name "Satoshi Signer (Test)"
 - `app/src/androidTest/kotlin/com/remotesigner/` — Android instrumented tests (Compose UI + Chaquopy E2E with cassette replay)
 - `app/src/androidTest/assets/cassettes/` — Cassette copies for Android E2E tests (copied from `tests/cassettes/`)
 - `app/pip_wheels/` — Pre-built Python wheels for Chaquopy (embit)

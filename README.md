@@ -158,16 +158,35 @@ avdmanager create avd -n test_device \
 ### Build
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug    # Debug build (auto-signed)
+./gradlew assembleRelease  # Release build (requires keystore, see below)
 ```
 
 Chaquopy automatically downloads Python 3.13 and pip-installs `trezor` and `embit` during the build.
 
 ### Install
 
+Both variants can be installed side-by-side on the same device:
+
 ```bash
-./gradlew installDebug
+./gradlew installDebug     # "Satoshi Signer (Test)" — com.remotesigner.debug
+./gradlew installRelease   # "Satoshi Signer" — com.remotesigner (stable)
 ```
+
+The debug build has a blue/purple icon with a "DEBUG" overlay; the release build uses the standard orange/red icon with R8 minification enabled.
+
+### Release Signing
+
+Release builds require a `keystore.properties` file in the project root (gitignored):
+
+```properties
+storeFile=../release.keystore
+storePassword=<password>
+keyAlias=release
+keyPassword=<password>
+```
+
+Generate a keystore: `keytool -genkey -v -keystore release.keystore -keyalg RSA -keysize 2048 -validity 10000 -alias release`
 
 ### Run Android Tests
 
