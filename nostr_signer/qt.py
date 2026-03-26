@@ -11,7 +11,10 @@ import ssl
 import time
 from typing import TYPE_CHECKING, Optional
 
-from PyQt6.QtWidgets import QPushButton, QLabel, QLineEdit, QVBoxLayout
+from PyQt6.QtWidgets import (
+    QPushButton, QLabel, QComboBox, QVBoxLayout, QHBoxLayout,
+    QInputDialog, QMessageBox,
+)
 
 import electrum_ecc as ecc
 import electrum_aionostr as aionostr
@@ -40,7 +43,9 @@ WK_PRIVKEY = "nostr_signer_privkey"
 WK_RECIPIENT_NPUB = "nostr_signer_recipient_npub"
 
 # Global config keys
-from nostr_signer.nostr_signer import CK_CONTACTS, get_contacts, save_contacts
+from nostr_signer.nostr_signer import (
+    CK_CONTACTS, get_contacts, save_contacts, extract_npub,
+)
 
 
 class Plugin(BasePlugin, Logger):
@@ -118,27 +123,17 @@ class Plugin(BasePlugin, Logger):
                 window = d.main_window if hasattr(d, 'main_window') else d.parent()
                 window.show_error(_("Nostr Signer error: {}").format(str(e)))
             except Exception:
-                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.critical(d, _("Error"), str(e))
 
     def _do_send(self, d: 'TxDialog'):
         wallet = d.wallet
-        # Get window from dialog (works even if load_wallet hook wasn't called)
         window = self.windows.get(wallet)
         if not window:
             window = d.main_window if hasattr(d, 'main_window') else d.parent()
             self.windows[wallet] = window
             self._ensure_keypair(wallet)
 
-        recipient_npub = wallet.db.get(WK_RECIPIENT_NPUB)
-        if not recipient_npub:
-            self._show_settings(window, wallet)
-            recipient_npub = wallet.db.get(WK_RECIPIENT_NPUB)
-            if not recipient_npub:
-                return
-
-        # Confirm dialog — shows current npub, lets user change it
-        confirmed, recipient_npub = self._confirm_send(window, wallet, recipient_npub)
+        confirmed, recipient_npub = self._show_send_dialog(window, wallet)
         if not confirmed:
             return
 
@@ -153,7 +148,6 @@ class Plugin(BasePlugin, Logger):
             window.show_error(_("No transaction to send."))
             return
 
-        # Build payload
         import base64
         psbt_b64 = base64.b64encode(tx.serialize_as_bytes()).decode()
         payload = {"tx": psbt_b64}
@@ -204,89 +198,140 @@ class Plugin(BasePlugin, Logger):
                 ],
             )
 
-    def _confirm_send(self, window: 'ElectrumWindow',
-                      wallet: 'Abstract_Wallet',
-                      npub: str) -> tuple:
-        """Show confirmation with current npub and option to change it.
+    def _show_send_dialog(self, window: 'ElectrumWindow',
+                          wallet: 'Abstract_Wallet') -> tuple:
+        """Unified send dialog with address book.
 
-        Returns (confirmed: bool, npub: str).
+        Returns (confirmed: bool, npub: str or None).
         """
         d = WindowModalDialog(window, _("Send via Nostr"))
+        d.setMinimumWidth(650)
         layout = QVBoxLayout(d)
-        layout.addWidget(QLabel(_("Send this PSBT to:")))
-        npub_edit = QLineEdit()
-        npub_edit.setText(npub)
-        layout.addWidget(npub_edit)
 
-        # Relays: hidden by default, toggle with "Show relays" link
+        layout.addWidget(QLabel(_("Send to signer:")))
+
+        # --- Editable combo box with contacts ---
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.setCompleter(None)
+
+        contacts = self._get_contacts()
+        npub_list = []  # parallel list of npubs for index lookup
+        for npub, name in contacts.items():
+            combo.addItem(f"{name} ({npub})")
+            npub_list.append(npub)
+
+        # Pre-select last-used recipient
+        last_npub = wallet.db.get(WK_RECIPIENT_NPUB) or ""
+        if last_npub in contacts:
+            idx = npub_list.index(last_npub)
+            combo.setCurrentIndex(idx)
+        elif last_npub:
+            combo.setCurrentText(last_npub)
+        else:
+            combo.setCurrentText("")
+
+        layout.addWidget(combo)
+
+        # --- Save / Delete buttons ---
+        btn_row = QHBoxLayout()
+        save_btn = QPushButton(_("Save Contact"))
+        delete_btn = QPushButton(_("Delete Contact"))
+        btn_row.addWidget(save_btn)
+        btn_row.addWidget(delete_btn)
+        layout.addLayout(btn_row)
+
+        def _update_buttons():
+            text = combo.currentText().strip()
+            npub = extract_npub(text)
+            can_save = npub.startswith("npub1") and npub not in contacts
+            save_btn.setEnabled(can_save)
+            # Delete enabled only when a saved contact is selected
+            idx = combo.currentIndex()
+            can_delete = (0 <= idx < len(npub_list)
+                          and combo.currentText() == combo.itemText(idx))
+            delete_btn.setEnabled(can_delete)
+
+        combo.currentTextChanged.connect(lambda _: _update_buttons())
+        combo.currentIndexChanged.connect(lambda _: _update_buttons())
+        _update_buttons()
+
+        def _on_save():
+            text = combo.currentText().strip()
+            npub = extract_npub(text)
+            if not npub.startswith("npub1"):
+                return
+            name, ok = QInputDialog.getText(
+                d, _("Save Contact"), _("Contact name:"))
+            if not ok or not name.strip():
+                return
+            contacts[npub] = name.strip()
+            self._save_contacts(contacts)
+            # Refresh combo
+            combo.clear()
+            npub_list.clear()
+            for n, nm in contacts.items():
+                combo.addItem(f"{nm} ({n})")
+                npub_list.append(n)
+            combo.setCurrentIndex(npub_list.index(npub))
+            _update_buttons()
+
+        def _on_delete():
+            idx = combo.currentIndex()
+            if idx < 0 or idx >= len(npub_list):
+                return
+            npub = npub_list[idx]
+            name = contacts[npub]
+            reply = QMessageBox.question(
+                d, _("Delete Contact"),
+                _("Remove {} from contacts?").format(name),
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            del contacts[npub]
+            self._save_contacts(contacts)
+            combo.removeItem(idx)
+            npub_list.pop(idx)
+            combo.setCurrentText("")
+            _update_buttons()
+
+        save_btn.clicked.connect(_on_save)
+        delete_btn.clicked.connect(_on_delete)
+
+        # --- Relays toggle ---
         relays_label = QLabel(self.config.NOSTR_RELAYS.replace(",", "\n"))
         relays_label.setVisible(False)
         toggle_btn = QPushButton(_("Show relays"))
         toggle_btn.setFlat(True)
-        toggle_btn.setStyleSheet("text-decoration: underline; color: palette(link);")
+        toggle_btn.setStyleSheet(
+            "text-decoration: underline; color: palette(link);")
 
         def _toggle_relays():
             visible = not relays_label.isVisible()
             relays_label.setVisible(visible)
-            toggle_btn.setText(_("Hide relays") if visible else _("Show relays"))
+            toggle_btn.setText(
+                _("Hide relays") if visible else _("Show relays"))
 
         toggle_btn.clicked.connect(_toggle_relays)
         layout.addWidget(toggle_btn)
         layout.addWidget(relays_label)
 
+        # --- OK / Cancel ---
         layout.addLayout(Buttons(CancelButton(d), OkButton(d)))
 
         if not d.exec():
-            return False, npub
+            return False, None
 
-        new_npub = npub_edit.text().strip()
-        if not new_npub.startswith("npub1"):
+        text = combo.currentText().strip()
+        npub = extract_npub(text)
+        if not npub.startswith("npub1"):
             window.show_error(_("Invalid npub — must start with npub1"))
-            return False, npub
+            return False, None
 
-        if new_npub != npub:
-            wallet.db.put(WK_RECIPIENT_NPUB, new_npub)
-            wallet.save_db()
-        return True, new_npub
-
-    # ------------------------------------------------------------------
-    # Settings
-    # ------------------------------------------------------------------
-
-    @hook
-    def settings_dialog(self, window: 'ElectrumWindow'):
-        self._show_settings(window, window.wallet)
-
-    def _show_settings(self, window: 'ElectrumWindow',
-                       wallet: 'Abstract_Wallet'):
-        d = WindowModalDialog(window, _("Nostr Signer Settings"))
-        layout = QVBoxLayout(d)
-
-        layout.addWidget(QLabel(
-            _("Signer npub (from the Satoshi Signer app):")
-        ))
-        npub_edit = QLineEdit()
-        npub_edit.setText(wallet.db.get(WK_RECIPIENT_NPUB) or "")
-        npub_edit.setPlaceholderText("npub1...")
-        layout.addWidget(npub_edit)
-
-        our_pub = self._get_pubkey_hex(wallet)
-        layout.addWidget(QLabel(
-            _("Plugin pubkey: {}...").format(our_pub[:16])
-        ))
-        layout.addWidget(QLabel(
-            _("Relays: {}").format(self.config.NOSTR_RELAYS)
-        ))
-
-        layout.addLayout(Buttons(CancelButton(d), OkButton(d)))
-
-        if d.exec():
-            npub = npub_edit.text().strip()
-            if npub and not npub.startswith("npub1"):
-                window.show_error(_("Invalid npub — must start with npub1"))
-                return
-            wallet.db.put(WK_RECIPIENT_NPUB, npub)
-            wallet.save_db()
+        # Save as last-used
+        wallet.db.put(WK_RECIPIENT_NPUB, npub)
+        wallet.save_db()
+        return True, npub
 
     # ------------------------------------------------------------------
     # Bech32 npub decode (minimal, avoids external deps)
