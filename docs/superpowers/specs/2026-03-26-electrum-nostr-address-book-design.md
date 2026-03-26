@@ -29,16 +29,24 @@ The "Send via Nostr" dialog (triggered by the "Send via Nostr" button in the tra
 
 ### Data Model & Storage
 
-**Global address book** stored in Electrum's config (`self.config`) under key `nostr_signer_contacts`:
+**Global address book** stored in Electrum's config under key `nostr_signer_contacts`:
 
 ```python
+# Read:  self.config.get("nostr_signer_contacts", {})
+# Write: self.config.set_key("nostr_signer_contacts", contacts_dict)
+# Persists to ~/.electrum/config as JSON, survives restarts.
+
 {
     "npub1abc...": "Sasha's Trezor",
     "npub1def...": "Office signer"
 }
 ```
 
-**Last-used tracking:** each wallet continues to store `nostr_signer_recipient_npub` in `wallet.db`. Updated on each successful send. Used to pre-select the combo box entry.
+**Defensive read:** `_get_contacts()` returns `{}` if the config value is missing, not a dict, or has non-string keys/values. Never crash on corrupted config.
+
+**Duplicate names are allowed** — two different npubs may share the same label. The npub suffix in the combo box display (`"Name (npub1...)"`) disambiguates them.
+
+**Last-used tracking:** each wallet continues to store `nostr_signer_recipient_npub` in `wallet.db`. Updated on each successful send via `wallet.save_db()`. Used to pre-select the combo box entry.
 
 **Migration:** existing `nostr_signer_recipient_npub` values in wallet DBs are not auto-migrated to contacts (no name to assign). They appear as raw npubs in the editable field; the user can save them with a name.
 
@@ -51,9 +59,9 @@ The "Send via Nostr" dialog (triggered by the "Send via Nostr" button in the tra
 
 **Sending:**
 1. User selects contact or pastes raw npub, clicks OK
-2. Extract npub from combo text (parse from `"Name (npub1...)"` format, or use raw text)
+2. Extract npub via `_extract_npub(combo_text)`: use `rfind("(npub1")` to locate the last parenthesized npub. If found, extract from that position to the closing `)`. Otherwise treat the entire stripped text as a raw npub. This handles names containing parentheses (e.g. `"My (test) signer (npub1abc...xyz)"`).
 3. Validate: starts with `npub1`, decodes to 32 bytes
-4. Save as last-used in wallet DB
+4. Save as last-used in wallet DB via `wallet.save_db()`
 5. Encrypt and publish (unchanged logic)
 
 **Saving a contact:**
@@ -73,12 +81,14 @@ The "Send via Nostr" dialog (triggered by the "Send via Nostr" button in the tra
 ### Code Changes
 
 **Modified:** `nostr_signer/qt.py`
-- `_confirm_send` → replaced by new `_show_send_dialog` method with combo box + address book buttons
+- Import line updated: add `QComboBox`, `QHBoxLayout`, `QInputDialog` to PyQt6 imports; remove `QLineEdit`
+- `_confirm_send` → replaced by new `_show_send_dialog` method with combo box + address book buttons. Button row uses `QHBoxLayout`.
 - `_do_send` → calls `_show_send_dialog` instead of separate settings + confirm flow
 - `_show_settings` → deleted
 - `settings_dialog` hook → deleted
-- New helper: `_get_contacts()` / `_save_contacts()` for config access
-- New helper: `_extract_npub(combo_text)` to parse npub from `"Name (npub1...)"` or raw text
+- New helper: `_get_contacts()` / `_save_contacts()` for config access (defensive: returns `{}` on bad data)
+- New helper: `_extract_npub(combo_text)` using `rfind("(npub1")` to parse npub from display format or raw text
+- Combo box: `setCompleter(None)` to disable auto-completion (prevents interference with pasting raw npubs)
 - Dialog gets `setMinimumWidth(650)`
 
 **Unchanged:**
