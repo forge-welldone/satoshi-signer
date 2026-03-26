@@ -9,7 +9,7 @@ local.properties
 __pycache__/
 *.pyc
 .worktrees/
-nostr_signer-*.zip
+nostr_signer*.zip
 .superpowers/
 release.keystore
 keystore.properties
