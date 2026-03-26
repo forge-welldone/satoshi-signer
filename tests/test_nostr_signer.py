@@ -365,3 +365,48 @@ class TestExtractNpub:
 
     def test_no_npub_returns_text(self):
         assert extract_npub("random text") == "random text"
+
+
+# ---------------------------------------------------------------------------
+# Contacts helpers (config-based address book)
+# ---------------------------------------------------------------------------
+
+from nostr_signer.nostr_signer import get_contacts, save_contacts
+
+
+class FakeConfig:
+    """Minimal Electrum config stub for testing."""
+    def __init__(self, data=None):
+        self._data = data or {}
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def set_key(self, key, value):
+        self._data[key] = value
+
+
+class TestContacts:
+
+    def test_get_contacts_empty(self):
+        config = FakeConfig()
+        assert get_contacts(config) == {}
+
+    def test_get_contacts_valid(self):
+        contacts = {"npub1abc": "Alice", "npub1def": "Bob"}
+        config = FakeConfig({"nostr_signer_contacts": contacts})
+        assert get_contacts(config) == contacts
+
+    def test_get_contacts_corrupted_not_dict(self):
+        config = FakeConfig({"nostr_signer_contacts": "garbage"})
+        assert get_contacts(config) == {}
+
+    def test_get_contacts_corrupted_non_string_values(self):
+        config = FakeConfig({"nostr_signer_contacts": {"npub1abc": 123}})
+        assert get_contacts(config) == {}
+
+    def test_save_contacts(self):
+        config = FakeConfig()
+        contacts = {"npub1abc": "Alice"}
+        save_contacts(config, contacts)
+        assert config.get("nostr_signer_contacts") == contacts

@@ -39,6 +39,9 @@ KEEP_DELAY = 24 * 60 * 60  # 24 hours
 WK_PRIVKEY = "nostr_signer_privkey"
 WK_RECIPIENT_NPUB = "nostr_signer_recipient_npub"
 
+# Global config keys
+from nostr_signer.nostr_signer import CK_CONTACTS, get_contacts, save_contacts
+
 
 class Plugin(BasePlugin, Logger):
 
@@ -88,6 +91,18 @@ class Plugin(BasePlugin, Logger):
         if not npub:
             return None
         return self._npub_to_hex(npub)
+
+    # ------------------------------------------------------------------
+    # Contacts (global address book in config)
+    # ------------------------------------------------------------------
+
+    def _get_contacts(self) -> dict:
+        """Load address book from global config. Returns {} on bad data."""
+        return get_contacts(self.config)
+
+    def _save_contacts(self, contacts: dict):
+        """Persist address book to global config."""
+        save_contacts(self.config, contacts)
 
     # ------------------------------------------------------------------
     # Send PSBT
