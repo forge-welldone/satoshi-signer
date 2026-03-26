@@ -372,7 +372,7 @@ tests/
 
 ## Electrum Plugin (Nostr Signer)
 
-The `nostr_signer/` directory contains an Electrum plugin that sends PSBTs from Electrum to the Satoshi Signer app over Nostr relays — no file transfer needed.
+The `nostr_signer/` directory contains an Electrum plugin that sends PSBTs from Electrum to the Satoshi Signer app over Nostr relays — no file transfer needed. Includes a global address book for saving signer contacts.
 
 ### How It Works
 
@@ -414,9 +414,10 @@ ln -s "$(pwd)/nostr_signer" /path/to/electrum/electrum/plugins/nostr_signer
 ### Setup
 
 1. Open the Satoshi Signer app — your **npub** is displayed on the Home screen as a QR code
-2. In Electrum: **Tools → Plugins → Nostr Signer → Settings**
-3. Paste the npub (scan the QR or copy the text)
-4. Relays are shared with Electrum's Nostr settings (no separate configuration)
+2. In Electrum, create a transaction and click **Send via Nostr** in the transaction dialog
+3. Paste the npub into the recipient field (scan the QR or copy the text)
+4. Click **Save Contact** to add the signer to your address book for future use
+5. Relays are shared with Electrum's Nostr settings (no separate configuration)
 
 ### Plugin Structure
 
