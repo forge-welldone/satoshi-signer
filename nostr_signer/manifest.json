@@ -4,6 +4,6 @@
   "description": "Send PSBTs to the Satoshi Signer Android app over Nostr relays. Encrypts transactions with NIP-04 and publishes as kind 4 events.",
   "author": "Satoshi Signer",
   "available_for": ["qt"],
-  "version": "0.4.0",
+  "version": "0.5.0",
   "icon": "nostr_signer.png"
 }
