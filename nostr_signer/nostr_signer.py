@@ -133,6 +133,21 @@ def compute_event_id(pubkey_hex: str, created_at: int, kind: int,
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def extract_npub(combo_text: str) -> str:
+    """Extract npub from combo display format or raw text.
+
+    Handles: "Name (npub1...)" and raw "npub1..." strings.
+    Uses rfind to handle names containing parentheses.
+    """
+    text = combo_text.strip()
+    pos = text.rfind("(npub1")
+    if pos != -1:
+        end = text.rfind(")")
+        if end > pos:
+            return text[pos + 1:end]
+    return text
+
+
 def schnorr_sign(privkey_bytes: bytes, msg_hash: bytes) -> bytes:
     """BIP-340 Schnorr sign a 32-byte message hash."""
     pk = ec.PrivateKey(privkey_bytes)

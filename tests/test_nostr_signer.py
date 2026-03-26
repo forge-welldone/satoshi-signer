@@ -333,3 +333,35 @@ class TestKeyManagement:
         pk = ec.PrivateKey(priv)
         pub = pk.get_public_key()
         assert pub.schnorr_verify(ec.SchnorrSig.parse(sig), msg)
+
+
+# ---------------------------------------------------------------------------
+# npub extraction from combo box display text
+# ---------------------------------------------------------------------------
+
+from nostr_signer.nostr_signer import extract_npub
+
+
+class TestExtractNpub:
+
+    def test_raw_npub(self):
+        npub = "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc"
+        assert extract_npub(npub) == npub
+
+    def test_contact_display_format(self):
+        text = "Sasha's Trezor (npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc)"
+        assert extract_npub(text) == "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc"
+
+    def test_name_with_parentheses(self):
+        text = "My (test) signer (npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc)"
+        assert extract_npub(text) == "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc"
+
+    def test_whitespace_stripped(self):
+        assert extract_npub("  npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc  ") == \
+            "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qwmsc"
+
+    def test_empty_string(self):
+        assert extract_npub("") == ""
+
+    def test_no_npub_returns_text(self):
+        assert extract_npub("random text") == "random text"
