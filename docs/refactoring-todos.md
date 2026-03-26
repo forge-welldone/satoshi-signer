@@ -1,613 +1,359 @@
 # Satoshi Signer — Refactoring TODOs
 
-> Comprehensive code review by 4 specialists: Android Engineer, Python Engineer,
-> System Architect, and Rubyist (fresh-eyes reviewer). Findings deduplicated and
-> prioritized by consensus across reviewers.
+> Code review by 5 specialists: Rubyist, Pythonista, Rubocop Fan, System Architect,
+> and Test Coverage Expert. Focused on readability, maintainability, and extendability.
 >
-> Date: 2026-03-18
+> Date: 2026-03-21
+>
+> For resolved items from prior reviews, see [refactoring-done.md](refactoring-done.md).
 
 ---
 
 ## How to Read This Document
 
-- **Priority tiers**: P0 (bugs/security — fix now), P1 (architecture — fix before adding features), P2 (quality — fix as you touch the code), P3 (polish — nice to have)
-- **Consensus column**: How many of the 4 reviewers independently flagged this issue
-- **Test impact**: Whether fixing this also improves automated test coverage
+- **Priority tiers**: P0 (silent failures — fix now), P1 (architecture — fix before adding features), P2 (quality — fix as you touch the code), P3 (polish — nice to have)
+- **Consensus column**: How many of the 5 reviewers independently flagged this issue
 - Items marked with 🧪 directly expand automated test coverage
 
 ---
 
-## P0 — Bugs & Security (Fix Now)
+## P0 — Critical (Silent failures, data corruption risk)
 
-### ~~1. Broadcast doesn't pass network parameter — RUNTIME BUG~~ ✅ FIXED
+### 1. 🧪 Bridge serialization untested — malformed Python returns silently default
 | | |
 |---|---|
-| **File** | `viewmodel/SignerViewModel.kt:513` |
-| **Consensus** | System Architect |
-| **Impact** | Testnet transactions submitted to mainnet endpoints, failing silently |
+| **File** | `bridge/PythonBridge.kt:38-70` (`toParseResult()`) |
+| **Consensus** | Test Expert, Rubyist (2/5) |
+| **Impact** | If Python returns unexpected shapes, Kotlin silently defaults to `"unknown"` / `0` — user sees wrong data |
 
-~~`pythonBridge.broadcast(state.rawHex)` doesn't pass the network. `PythonBridge.broadcast()` defaults to `"main"`. A testnet broadcast from the Result screen goes to mainnet.~~
+`toParseResult()` does `inp["address"]?.toString() ?: "unknown"` and `(inp["amount"] as? Number)?.toLong() ?: 0`. No test verifies behavior when Python returns: `null` inputs list, string where number expected, missing keys, or unknown status values.
 
-~~**Fix:** Change to `pythonBridge.broadcast(state.rawHex, state.network)`.~~
-
-**Fixed:** Now passes `state.network` to `pythonBridge.broadcast()`.
+**Fix:** Add JVM unit tests for `toParseResult()` with malformed input maps: null values, wrong types, missing keys, empty lists.
 
 ---
 
-### ~~2. NostrEvent.verifyId accepts events when verification throws~~ ✅ FIXED
+### 2. 🧪 Passphrase cancellation flow untested
 | | |
 |---|---|
-| **File** | `nostr/NostrEvent.kt:67-69` |
-| **Consensus** | System Architect, Android Engineer, Rubyist (3/4) |
-| **Impact** | Malformed events bypass integrity check; attacker can craft events that throw |
+| **File** | `bridge/PythonBridge.kt:114-116` (`CANCEL_SENTINEL`), `bridge/SigningOrchestrator.kt` |
+| **Consensus** | Test Expert (1/5) |
+| **Impact** | Normal user action (cancel passphrase dialog) with zero test coverage — final state unknown |
 
-~~The catch block returns `true`, meaning any exception during SHA-256 verification causes the event to be accepted. For an app processing financial data (PSBTs), unverifiable events should be rejected.~~
+`CANCEL_SENTINEL` → `LinkedBlockingQueue` → Python `get_passphrase()` raises `RuntimeError("Cancelled")` → `sign_psbt` returns `{"status": "cancelled"}` → `SigningOrchestrator` maps to `SigningResult.Cancelled` → ViewModel re-parses PSBT. None of this chain is tested.
 
-~~**Fix:** Return `false` in the catch block.~~
-
-**Fixed:** Catch block now returns `false`, rejecting events when ID verification throws. Test added in `NostrReceiverTest`.
+**Fix:** Add ViewModel test: cancel passphrase → verify state returns to `TransactionReview`. Add Python test: cancel sentinel → verify `sign_psbt` returns `cancelled` status.
 
 ---
 
-### ~~3. PKCS7 unpad has no validation — padding oracle in nostr_signer~~ ✅ FIXED
+### 3. 🧪 Account path callback untested
 | | |
 |---|---|
-| **File** | `nostr_signer/nostr_signer.py:91-93` |
-| **Consensus** | Python Engineer |
-| **Impact** | Wrong key/corrupted data produces silent garbage instead of clean error |
+| **File** | `bridge/SigningOrchestrator.kt`, `bridge/PythonBridge.kt` (SigningCallback) |
+| **Consensus** | Test Expert (1/5) |
+| **Impact** | Multisig PSBTs with relative derivation paths trigger `requestAccountPath()` — untested, likely crashes |
 
-~~`_pkcs7_unpad` trusts the last byte blindly. `pad_len = 0` returns entire buffer; `pad_len > len(data)` silently slices wrong.~~
+When Python encounters relative BIP32 paths, it calls `callback.requestAccountPath()`. This blocks the Python thread while UI shows a dialog. The entire flow has zero tests.
 
-~~**Fix:** Validate pad_len range (1–16), verify all padding bytes equal pad_len, raise ValueError on mismatch.~~
-
-**Fixed:** `_pkcs7_unpad` now validates: pad_len in range 1–16, pad_len ≤ data length, and all padding bytes equal pad_len. Raises `ValueError` on any mismatch. 10 tests added in `TestPkcs7Padding` including corrupted-ciphertext integration test.
-
----
-
-### ~~4. Broadcaster silently falls back to mainnet for unknown network values~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `remotesigner/broadcaster.py:28` |
-| **Consensus** | Python Engineer |
-| **Impact** | Typo like `network="testt"` broadcasts to mainnet without warning |
-
-~~`ENDPOINTS.get(network, ENDPOINTS["main"])` silently falls back. For a transaction broadcast function, this is dangerous.~~
-
-~~**Fix:** Raise `ValueError` for unrecognized network values.~~
-
-**Fixed:** `broadcast_transaction` now raises `ValueError` for any network not in `ENDPOINTS`. Added testnet3, testnet4, and signet endpoints. `"test"` kept as backward-compat alias for testnet3.
-
----
-
-### ~~5. No input validation on broadcast raw_hex parameter~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `remotesigner/broadcaster.py:19` |
-| **Consensus** | Python Engineer |
-| **Impact** | Any string sent directly to mempool.space/blockstream |
-
-~~No validation that the string is valid hex, parses as a transaction, or has reasonable length.~~
-
-~~**Fix:** Validate hex encoding and add a size limit before HTTP request.~~
-
-**Fixed:** `broadcast_transaction` now validates: non-empty string, valid hex encoding, even length, and 400KB max transaction size. Raises `ValueError` on any mismatch.
+**Fix:** Add ViewModel test: `accountPathRequest` emitted → submit valid path → signing continues. Test invalid path → error. Test cancel → signing cancelled.
 
 ---
 
 ## P1 — Architecture (Fix Before Adding Features)
 
-### ~~6. Extract responsibilities from SignerViewModel (God Object)~~ ✅ FIXED
+### 4. `signPsbt()` still returns `Map<String, Any?>` — type-unsafe boundary
 | | |
 |---|---|
-| **File** | `viewmodel/SignerViewModel.kt` (652 lines) |
-| **Consensus** | All 4 reviewers (4/4) |
-| **Test impact** | 🧪 Enables ViewModel unit testing (currently impossible) |
+| **File** | `bridge/PythonBridgeInterface.kt`, `bridge/SigningOrchestrator.kt:140-159` |
+| **Consensus** | Rubyist, Architect (2/5) |
 
-~~The ViewModel handles: PSBT parsing, signing orchestration, USB polling, Nostr lifecycle, inbox CRUD, contact CRUD, NFC state, passphrase/account-path callbacks, and broadcast. Mutable `var` fields (`currentPsbtBytes`, `currentUsbBridge`, `currentSigningCallback`, `currentSigningInboxId`, `signingJob`) must be coordinated manually.~~
+`parsePsbt()` returns typed `ParsedPsbtResult` but `signPsbt()` returns `Map<String, Any?>`. `SigningOrchestrator.doSign()` accesses `result["status"]`, `result["raw_tx"]?.toString()` without compile-time safety.
 
-~~**Recommended decomposition:**~~
-~~- `SigningOrchestrator` — manages signing flow, bridge lifecycle, callback wiring~~
-~~- `InboxRepository` — wraps InboxDao, handles event parsing, inbox lifecycle~~
-~~- `ContactRepository` — wraps ContactDao, fingerprint enrichment logic~~
-~~- `SignerViewModel` — composition root, holds state, delegates to above, drives navigation~~
-
-~~**Why this matters:** Every feature change requires reading 652 lines. Side-effect interactions between unrelated flows are invisible. Most importantly, the ViewModel can't be unit-tested because it directly instantiates `PythonBridge`, `TrezorUsbManager`, and `AppDatabase`.~~
-
-**Fixed:** Extracted `ContactRepository`, `InboxRepository`, and `SigningOrchestrator`. Created `PythonBridgeInterface` for testability. ViewModel accepts all dependencies via constructor injection through `SignerViewModelFactory`. ViewModel reduced from ~680 to ~350 lines.
+**Fix:** Create `SigningResponse` data class. Parse in `PythonBridge.signPsbt()` via a `toSigningResponse()` helper.
 
 ---
 
-### ~~7. Create typed bridge response models~~ ✅ FIXED
+### 5. Dependency direction: SigningOrchestrator imports viewmodel types
 | | |
 |---|---|
-| **File** | `bridge/PythonBridge.kt`, `viewmodel/SignerViewModel.kt:252-276` |
-| **Consensus** | System Architect, Python Engineer (2/4) |
-| **Test impact** | 🧪 Makes bridge contract testable at compile time |
+| **File** | `bridge/SigningOrchestrator.kt` imports `viewmodel.PassphraseRequest`, `viewmodel.AccountPathRequest` |
+| **Consensus** | Architect (1/5) |
+| **Impact** | Bridge layer depends on UI layer — blocks reuse (e.g., background signing service) |
 
-~~Python returns `Map<String, Any?>`, Kotlin interprets via unchecked casts (`result["outputs"] as? List<Map<String, Any?>>`). A Python key rename silently produces null at runtime.~~
-
-~~**Fix:** Define Kotlin data classes (`ParsedPsbtResult`, `SignResult`, `BroadcastResult`) and parse once in `PythonBridge`. On the Python side, define `TypedDict` return types. Two call sites parsing the same output (`parsePsbt` and `handleInboxEvent`) should share the same model.~~
-
-**Fixed:** Created `ParsedPsbtResult` and `BroadcastResult` data classes in `bridge/BridgeModels.kt`. Moved `TxInput`, `TxOutput`, `SignerInfo` to the bridge package. `PythonBridge` now returns typed models via `toParseResult()` and `toBroadcastResult()` helpers. Consumers (`SignerViewModel`, `InboxRepository`) use typed property access — no more unchecked casts. Python TypedDicts added to `psbt_parser.py` and `broadcaster.py`. `signPsbt()` left as `Map<String, Any?>` since `SigningOrchestrator` already provides the typed `SigningResult` sealed class.
+**Fix:** Move `PassphraseRequest` and `AccountPathRequest` to `bridge/CallbackModels.kt`.
 
 ---
 
-### ~~8. Unify error handling across Python-Kotlin boundary~~ ✅ FIXED
+### 6. Dependency direction: Repos import UI constants
 | | |
 |---|---|
-| **File** | Multiple (signer.py, broadcaster.py, psbt_parser.py, PythonBridge.kt) |
-| **Consensus** | System Architect, Rubyist (2/4) |
+| **Files** | `data/InboxRepository.kt`, `data/ContactRepository.kt` import from `ui/Formatters.kt` |
+| **Consensus** | Architect (1/5) |
+| **Impact** | Data layer depends on UI layer — backwards dependency |
 
-~~Three different error patterns:~~
-~~- `parse_psbt` raises `ValueError`~~
-~~- `sign_psbt` returns `{"status": "error", "message": ...}`~~
-~~- `broadcast_transaction` returns `{"status": "error", ...}` but failures become a string field, not Error state~~
-
-~~**Fix:** Establish convention: Python functions either return dict with `"status"` key or raise. Create a Kotlin helper that maps the dict error pattern to `AppState.Error`. Document in CLAUDE.md.~~
-
-**Fixed:** Documented two-pattern convention in CLAUDE.md: (1) validation functions raise exceptions, (2) operations with multiple outcomes return status dicts. Fixed bug where `SignerViewModel.broadcast()` didn't catch `ValueError` from Python input validation — added try-catch so invalid input shows a user-facing error instead of crashing. No Kotlin helper needed since typed models (`ParsedPsbtResult`, `BroadcastResult`, `SigningResult`) already handle error mapping at their respective call sites.
+**Fix:** Move constants and `formatBtcAmount()` to a `config/` or `domain/` package.
 
 ---
 
-### ~~9. Refactor sign_psbt in Python (200-line function)~~ ✅ FIXED
+### 7. No linting/formatting tools configured
 | | |
 |---|---|
-| **File** | `remotesigner/signer.py:749-955` |
-| **Consensus** | Python Engineer, Rubyist (2/4) |
-| **Test impact** | 🧪 Smaller functions are independently testable |
+| **Files** | `build.gradle.kts`, project root |
+| **Consensus** | Rubocop Fan (1/5) |
+| **Impact** | Code is clean today (8.5/10 consistency) but will drift without enforcement |
 
-~~A 200-line try/finally/try/except block handling: PSBT parsing, transport creation, fingerprint reading, path resolution, signing, and signature insertion.~~
-
-~~**Fix:** Extract into: `_connect_and_get_fingerprint()`, `_resolve_paths()`, `_perform_signing()`, `_insert_signatures()`.~~
-
-**Fixed:** Extracted `_connect_and_get_fingerprint()`, `_resolve_paths()`, `_perform_signing()`, `_insert_signatures()` from the 200-line `sign_psbt()`. Orchestrator is now ~35 lines. All existing tests pass unchanged. Fixed stale docstring (said "signed"/"error", actual statuses are "complete"/"partial"/"cancelled"/"error").
+**Fix:** Add ktlint + detekt (Kotlin), ruff (Python), `.editorconfig`. Consider pre-commit hook.
 
 ---
 
-### ~~10. Deduplicate multisig script parsing~~ ✅ FIXED
+### 8. 🧪 Nostr relay reconnection/backoff untested
 | | |
 |---|---|
-| **File** | `psbt_parser.py:174-194` and `signer.py:159-238` |
-| **Consensus** | Python Engineer |
-| **Test impact** | 🧪 Single function easier to test exhaustively |
+| **File** | `nostr/NostrReceiver.kt` |
+| **Consensus** | Test Expert (1/5) |
+| **Impact** | Core PSBT delivery feature; backoff logic could silently break |
 
-~~`_parse_multisig_info` in parser and `_parse_multisig_script` in signer both parse OP_CHECKMULTISIG scripts. Different scope but same core byte parsing.~~
-
-~~**Fix:** Extract shared m/n/pubkeys parsing into `remotesigner/script_utils.py`.~~
-
-**Fixed:** Extracted `parse_multisig_script()` and `MultisigInfo` dataclass into `remotesigner/script_utils.py`. `psbt_parser.py` and `signer.py` both delegate byte parsing to the shared function. 11 direct unit tests added in `test_script_utils.py`.
+**Fix:** Add instrumented tests: relay failure → verify backoff, relay recovery → verify reset.
 
 ---
 
-### ~~11. Deduplicate taproot vs. ECDSA derivation matching~~ ✅ FIXED
+### 9. Result state conflates signing and broadcast concerns
 | | |
 |---|---|
-| **File** | `signer.py` (lines 492-515, 590-629, 389-404) |
-| **Consensus** | Rubyist, Python Engineer (2/4) |
+| **File** | `viewmodel/Models.kt` (`AppState.Result`) |
+| **Consensus** | Architect (1/5) |
+| **Impact** | `broadcastStatus` is a magic string; `errorMessage` field exists but is never set |
 
-~~The pattern "if taproot, iterate taproot_bip32_derivations; else iterate bip32_derivations, checking fp_to_prefix then master_fp" appears 3 times with slight variations.~~
+**Fix:** Replace `broadcastStatus: String?` with sealed class. Remove unused `errorMessage`.
 
-~~**Fix:** Extract `find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot)`.~~
+---
 
-**Fixed:** Extracted `_find_matching_derivation(scope, master_fp, fp_to_prefix, is_taproot)` which returns the resolved `address_n` or `None`. `psbt_to_trezor_inputs` and `psbt_to_trezor_outputs` both delegate to it. `_find_key_origin` simplified to iterate both derivation types in a single loop. 10 direct unit tests added in `TestFindMatchingDerivation`.
+### 10. Error state too generic
+| | |
+|---|---|
+| **File** | `viewmodel/Models.kt` (`AppState.Error`) |
+| **Consensus** | Architect (1/5) |
+| **Impact** | No distinction between parse/sign/broadcast errors; blocks retry logic |
+
+**Fix:** Subtype into `Parse`, `Signing`, `Broadcast` error variants.
 
 ---
 
 ## P2 — Quality & Testability (Fix as You Touch the Code)
 
-### ~~12. 🧪 Add ViewModel unit tests~~ ✅ FIXED
+### 11. Network strings should be an enum
 | | |
 |---|---|
-| **File** | New: `app/src/test/kotlin/com/remotesigner/viewmodel/SignerViewModelTest.kt` |
-| **Consensus** | System Architect, Android Engineer (2/4) |
-| **Depends on** | #6 (extract responsibilities to make testable) |
+| **Files** | `viewmodel/Models.kt`, `broadcast/TransactionBroadcaster.kt`, `ui/MempoolUrl.kt`, `ui/ResultScreen.kt` |
+| **Consensus** | Rubyist, Architect (2/5) |
 
-~~The most complex component has zero JVM unit tests. With extracted dependencies (#6), test:~~
-~~- State transitions: Home → TransactionReview → Signing → Result~~
-~~- Cancellation mid-signing~~
-~~- Inbox status transitions~~
-~~- Contact CRUD methods~~
-~~- Error propagation from Python bridge~~
+`"test"`, `"main"`, `"testnet3"`, `"testnet4"`, `"signet"` as raw strings. Typo = silent failure.
 
-**Fixed:** 55 JVM unit tests added using mockk + kotlinx-coroutines-test. Covers: state transitions (Home → TransactionReview → Signing → Result), cancellation mid-signing, inbox status transitions (SIGNING/SIGNED/BROADCAST/FAILED/PENDING/DELETED), contact CRUD with signer re-enrichment, broadcast success/error/exception paths, NFC state management, goHome inbox status preservation, and error propagation from Python bridge. Added `unitTests.isReturnDefaultValues = true` to enable JVM testing of AndroidViewModel without Robolectric.
+**Fix:** Create `enum class Network`. Parse from Python's string output once in bridge layer.
 
 ---
 
-### ~~13. 🧪 Add direct tests for _is_psbt_fully_signed~~ ✅ FIXED
+### 12. Python type hints: inconsistent generic syntax
 | | |
 |---|---|
-| **File** | New test cases in `tests/test_signer.py` |
-| **Consensus** | Python Engineer |
+| **Files** | `psbt_parser.py`, `script_utils.py`, `signer.py` |
+| **Consensus** | Pythonista (1/5) |
 
-~~This critical function determines broadcast-readiness. Three code paths (taproot key-path, multisig threshold, single-sig ECDSA) — none have direct unit tests.~~
+Mixing `List[bytes]` (old) and `list[InputInfo]` (new). Python 3.13 target makes old syntax unnecessary.
 
-**Fixed:** 25 direct unit tests added in `TestIsPsbtFullySigned` covering all three code paths: taproot key-path (PSBT_IN_TAP_KEY_SIG), multisig threshold (2-of-3, 1-of-2, 3-of-3, excess sigs), and single-sig ECDSA. Also covers: witness_script vs redeem_script priority, P2SH-P2WSH witness program bypass, bare P2SH multisig, mixed input types, and edge cases (empty PSBT, short scripts, non-multisig witness scripts).
+**Fix:** Replace all `List[X]` → `list[X]`, `Dict[K, V]` → `dict[K, V]`, etc.
 
 ---
 
-### ~~14. 🧪 Fix permanently skipped Python tests (missing fixtures)~~ ✅ FIXED
+### 13. `ParsedTransaction` dataclass is intermediate clutter
 | | |
 |---|---|
-| **File** | `tests/test_psbt_parser.py` |
-| **Consensus** | Python Engineer |
+| **File** | `psbt_parser.py:50-58` |
+| **Consensus** | Pythonista, Rubyist (2/5) |
 
-~~`TestParseMultisigPsbt` and `TestParseOpReturnPsbt` reference PSBT files (`trezor.multisig.2.a-ads-7d42c2e3.psbt`, `aa_cold3_watch-f1516d7b.psbt`) that don't exist in `tests/psbts/`. These regression tests are permanently skipped.~~
+Dataclass built then manually deconstructed to dict. Fields untyped (`list` instead of `list[InputInfo]`), `raw_psbt: object = None` is vague.
 
-~~**Fix:** Add missing PSBT fixtures or rewrite tests with synthetic PSBT data.~~
-
-**Fixed:** Replaced file-based fixtures with inline embit-constructed PSBTs. `TestParseMultisigPsbt` builds a synthetic 2-of-3 P2WSH multisig PSBT (partially signed). `TestParseOpReturnPsbt` builds a synthetic PSBT with an OP_RETURN output. All 8 tests now run without skips.
+**Fix:** Return dataclass directly (using `asdict()`) or build the dict without the intermediate object.
 
 ---
 
-### ~~15. 🧪 Move Bech32Test to JVM tests~~ ✅ FIXED
+### 14. Silent exception swallowing in Kotlin
 | | |
 |---|---|
-| **File** | `app/src/androidTest/.../Bech32Test.kt` → `app/src/test/.../Bech32Test.kt` |
-| **Consensus** | Android Engineer |
+| **Files** | `data/InboxRepository.kt:28-47`, `viewmodel/SignerViewModel.kt:71-85` |
+| **Consensus** | Rubyist (1/5) |
 
-~~Pure Kotlin with no Android dependencies, but runs as instrumented test (requires emulator). Moving to `test/` makes it a fast JVM test.~~
+`catch (_: Exception)` hides bugs. NFC decryption conflates "wrong key" with "keystore locked".
 
-**Fixed:** Moved to `app/src/test/kotlin/com/remotesigner/nostr/Bech32Test.kt` as a JVM unit test. Package updated to `com.remotesigner.nostr` to colocate with `Bech32.kt` source. All 4 tests (encode, decode, round-trip, nsec) pass without emulator.
+**Fix:** Add `Log.w()` to `InboxRepository`. Catch specific exceptions in `onNfcTagResult()`.
 
 ---
 
-### ~~16. 🧪 Add NostrReceiver message handling tests~~ ✅ FIXED
+### 15. `ContactRepository.saveContact()` silently returns on validation failure
 | | |
 |---|---|
-| **File** | Expand `app/src/androidTest/.../NostrReceiverTest.kt` |
-| **Consensus** | System Architect |
+| **File** | `data/ContactRepository.kt:26-43` |
+| **Consensus** | Rubyist (1/5) |
 
-~~`handleMessage` does event parsing, deduplication, NIP-04 decryption, and PSBT extraction. Should cover: malformed events, duplicate events, events with invalid NIP-04 content.~~
-
-**Fixed:** 7 handleMessage tests added using a sentinel-event pattern (no Thread.sleep). Covers: NOTICE/EOSE messages ignored, events with missing JSON fields dropped, non-kind-4 events filtered, invalid NIP-04 content dropped, non-JSON decrypted payload dropped, missing "tx" field dropped, and pre-seeded event IDs skipped via `seedSeenIds()`.
+**Fix:** Return sealed class `SaveResult.Success` / `SaveResult.ValidationError(reason)`.
 
 ---
 
-### ~~17. 🧪 Add ContactsScreen Compose UI tests~~ ✅ FIXED
+### 16. Overly broad exception handling in Python
 | | |
 |---|---|
-| **File** | New: `app/src/androidTest/.../ContactsScreenTest.kt` |
-| **Consensus** | Android Engineer |
+| **Files** | `signer.py:407,641,927,968`, `trezor_ui.py:50,118` |
+| **Consensus** | Pythonista (1/5) |
 
-~~ContactsScreen has add/edit/delete dialogs and fingerprint management but no Compose UI tests. Other screens are well-covered by `ScreenRenderTest`.~~
+`except Exception: continue` hides real bugs. Callback safety catch is justified but undocumented.
 
-**Fixed:** 20 Compose UI tests added in `ContactsScreenTest.kt` covering: empty state rendering, contact list display (labels, fingerprints, npub), Add Contact dialog (validation, save, cancel), Edit Contact dialog (pre-filled values, update label, add/delete fingerprint, validation), Delete Contact confirmation dialog (confirm, cancel), and dynamic list updates via mutable state.
+**Fix:** Use specific exceptions where possible. Document intentional broad catches.
 
 ---
 
-### ~~18. 🧪 Add negative-path Python signing tests~~ ✅ FIXED
+### 17. 🧪 Missing cassette scenarios
 | | |
 |---|---|
-| **File** | Expand `tests/test_signer.py` |
-| **Consensus** | System Architect |
+| **Files** | `tests/cassettes/`, `app/src/androidTest/assets/cassettes/` |
+| **Consensus** | Test Expert (1/5) |
 
-~~What happens with: truncated PSBT? No matching fingerprint? Relative paths and no callback? These error paths need coverage.~~
+Only 2 cassettes (single-sig P2WPKH, multisig testnet3). Missing: P2PKH, P2SH, Taproot, mainnet.
 
-**Fixed:** 11 negative-path tests added in `TestSignPsbtNegativePaths` (9 integration tests through `sign_psbt`) and `TestConversionNegativePaths` (2 direct unit tests). Covers: truncated/empty/invalid PSBT bytes, USB connection failure, fingerprint read failure, relative paths without callback, non-cancellation TrezorFailure codes, account path callback error, output conversion error, missing UTXO validation, and bad scriptPubKey address derivation.
+**Fix:** Record additional cassettes with `sign_cli.py --record`.
 
 ---
 
-### ~~19. Fix StateFlow race conditions in ViewModel (partially fixed)~~ ✅ FIXED
+### 18. No state machine transition guards
 | | |
 |---|---|
-| **File** | `viewmodel/SignerViewModel.kt` (lines 613, 506-531) |
-| **Consensus** | Android Engineer |
+| **File** | `viewmodel/SignerViewModel.kt` |
+| **Consensus** | Architect (1/5) |
 
-~~`reEnrichSigners()` and `broadcast()` both read-modify-write `_state` non-atomically. Meanwhile other flows may also update state.~~
+Any state can transition to any other. `Signing → Contacts` is technically possible.
 
-~~**Partially fixed:** `goHome()` had a race where it read a stale `inboxItems` StateFlow snapshot (which hadn't yet propagated the `updateBroadcast` Room write) and overwrote BROADCAST status back to SIGNED. Fixed by checking the authoritative in-memory `AppState.Result.txid` instead of the stale Flow.~~
-
-~~**Remaining:** Use `_state.update { currentState -> ... }` (atomic update API on MutableStateFlow) instead of `val s = _state.value; _state.value = s.copy(...)` for `reEnrichSigners()` and `broadcast()`.~~
-
-**Fixed:** All read-modify-write patterns replaced with `_state.update { }` atomic API with type guards: `reEnrichSigners()`, `broadcast()` (all 4 write sites), and both progress callbacks in `signWithTrezor()`/`signWithBridge()`. Each update lambda checks the state type and becomes a no-op if it changed concurrently. 3 regression tests added.
+**Fix:** Add `validTransition()` check or type guards in `_state.update {}`.
 
 ---
 
-### ~~20. AppState.Result ByteArray equality issue~~ ✅ FIXED
+### 19. SigningOrchestrator race condition on `currentUsbBridge`
 | | |
 |---|---|
-| **File** | `viewmodel/SignerViewModel.kt:73` |
-| **Consensus** | Android Engineer |
+| **File** | `bridge/SigningOrchestrator.kt` |
+| **Consensus** | Architect (1/5) |
 
-~~`AppState.Result` is a data class with `ByteArray` field. Data class `equals()`/`hashCode()` use reference equality for arrays, causing unnecessary recompositions.~~
+`cancel()` sets `currentUsbBridge = null` while `doSign()` may be using it — non-atomic.
 
-~~**Fix:** Override `equals`/`hashCode` or wrap `ByteArray` in an inline class with structural equality.~~
-
-**Fixed:** Overrode `equals()` and `hashCode()` in `AppState.Result` to use `contentEquals()`/`contentHashCode()` for the `updatedPsbt` ByteArray field. 5 unit tests added covering: content equality across different references, consistent hashCode, different content inequality, null vs non-null, and both-null equality.
+**Fix:** Use `AtomicReference<SigningBridge?>` or synchronize access.
 
 ---
 
-### 21. Nostr seenIds grows unboundedly — WON'T FIX
+### 20. Broadcast button DRY violation in ResultScreen
 | | |
 |---|---|
-| **File** | `nostr/NostrReceiver.kt:47` |
-| **Consensus** | Android Engineer |
+| **File** | `ui/ResultScreen.kt:77-107` |
+| **Consensus** | Rubyist (1/5) |
 
-`seenIds` accumulates event IDs for the ViewModel lifetime. Long sessions could accumulate thousands.
+Three nearly identical button blocks for testnet variants.
 
-**Won't fix:** In practice, the app receives a handful of PSBTs per day via Nostr (kind 4 events tagged to our pubkey, 24h lookback). Even over months of continuous use, seenIds would hold hundreds of 64-char hex strings — a few KB. Room's `insertIgnore` already deduplicates at the database level, so seenIds is just a fast in-memory filter to skip redundant decryption. Bounding the set would introduce a tradeoff (evicted IDs cause redundant decryption work on relay re-delivery) to solve a problem that doesn't exist at this app's scale.
-
----
-
-### ~~22. Nostr private key in plaintext SharedPreferences~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `nostr/NostrKeyManager.kt:14` |
-| **Consensus** | System Architect |
-
-~~The Nostr secret key (used for NIP-04 PSBT decryption) is stored as hex in `SharedPreferences`. On rooted devices, another app could decrypt all incoming PSBTs.~~
-
-~~**Fix:** Use `EncryptedSharedPreferences` from Jetpack Security library.~~
-
-**Fixed:** Replaced `SharedPreferences` with `EncryptedSharedPreferences` (`androidx.security:security-crypto:1.1.0-alpha06`). Keys encrypted via Android Keystore (AES-256-GCM values, AES-256-SIV key names). Old plaintext prefs deleted on construction (no migration — key regenerates). Tests verify encrypted storage is not readable via plain `SharedPreferences` API.
-
----
-
-### ~~23. No PSBT size limit~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `psbt_parser.py:34`, `signer.py:789` |
-| **Consensus** | System Architect, Python Engineer (2/4) |
-
-~~Both `parse_psbt` and `sign_psbt` accept arbitrary `psbt_bytes` without size limit. PSBTs arrive from untrusted Nostr relays.~~
-
-~~**Fix:** Enforce a reasonable size limit (e.g., 1MB) before parsing.~~
-
-**Fixed:** Added `MAX_PSBT_SIZE = 1_048_576` (1 MB) constant in `psbt_parser.py`. `parse_psbt` raises `ValueError` for oversized input. `sign_psbt` imports the same constant and returns error status. 5 tests added across `test_psbt_parser.py` and `test_signer.py`.
-
----
-
-### ~~24. Replace Thread.sleep in tests with deterministic synchronization~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `app/src/androidTest/.../NostrReceiverTest.kt:131,165` |
-| **Consensus** | Android Engineer |
-
-~~`Thread.sleep(500)` and `Thread.sleep(3000)` are inherently flaky. The same file uses `CountDownLatch` elsewhere.~~
-
-~~**Fix:** Use `CountDownLatch` or polling with timeout for all assertions.~~
-
-**Fixed:** `receiver_deduplicatesByEventId` now uses the sentinel-event pattern (sends a sentinel after the duplicate, waits for it via `CountDownLatch`). `receiver_connectedCount_survivesRelayFailure` now collects `relayStatuses` StateFlow and uses `CountDownLatch` to wait for the working relay to reach `CONNECTED` state. No more `Thread.sleep` in the file.
-
----
-
-### ~~25. Undeclared `ecdsa` dependency in nostr_signer~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `nostr_signer/nostr_signer.py:69` |
-| **Consensus** | Python Engineer |
-
-~~`from ecdsa import SECP256k1, SigningKey` — relies on transitive dependency from `trezor`. If `trezor` drops `ecdsa`, nostr_signer breaks.~~
-
-~~**Fix:** Add `ecdsa` to requirements or refactor to use `embit` for ECDH.~~
-
-**Fixed:** Refactored `_ecdh()` to use embit's secp256k1 bindings (`ec_pubkey_tweak_mul` + `ec_pubkey_serialize`) instead of the `ecdsa` pure-Python library. Eliminated the transitive dependency. All 27 existing nostr_signer tests pass unchanged.
+**Fix:** Loop over `listOf("testnet4" to "Testnet4", ...)` or extract `BroadcastButton` composable.
 
 ---
 
 ## P3 — Polish (Nice to Have)
 
-### ~~26. Move data classes out of SignerViewModel~~ ✅ FIXED
+### 21. `formatBtcAmount()` is locale-unaware
 | | |
 |---|---|
-| **Files** | `viewmodel/SignerViewModel.kt:34-89` |
-| **Consensus** | System Architect, Rubyist (2/4) |
+| **File** | `ui/Formatters.kt:15` |
+| **Consensus** | Rubyist (1/5) |
 
-~~`TxInput`, `TxOutput`, `SignerInfo`, `AppState`, `PassphraseRequest`, `AccountPathRequest` — shared domain types referenced by all UI code. Move to `viewmodel/Models.kt`.~~
-
-**Fixed:** `AppState`, `PassphraseRequest`, and `AccountPathRequest` moved to `viewmodel/Models.kt`. (`TxInput`, `TxOutput`, `SignerInfo` were already moved to `bridge/BridgeModels.kt` in #7.) No import changes needed — all types remain in the `com.remotesigner.viewmodel` package.
+**Fix:** `String.format(Locale.ROOT, "%.8f BTC", satoshis / 100_000_000.0)`
 
 ---
 
-### ~~27. Move InboxItemEntity to data package~~ ✅ FIXED
+### 22. InputRow/OutputRow duplication in TransactionReviewScreen
 | | |
 |---|---|
-| **File** | `nostr/NostrInbox.kt` → `data/InboxItemEntity.kt` |
-| **Consensus** | System Architect, Rubyist (2/4) |
+| **File** | `ui/TransactionReviewScreen.kt:165-200` |
+| **Consensus** | Rubyist (1/5) |
 
-~~Room entity in `nostr` package creates circular dependency with `data` package. Entity belongs with other Room entities.~~
-
-**Fixed:** Moved `InboxItemEntity` and `InboxStatus` enum to `data/InboxItemEntity.kt`. `RelayStatus` enum and utility functions (`formatRelativeTime`, `formatBtcAmount`, `truncateNpub`) remain in `nostr/NostrInbox.kt` where they belong. Updated imports across 13 source and test files.
+**Fix:** Extract shared `AddressRow(address, amount, prefix, network)` composable.
 
 ---
 
-### ~~28. Consolidate formatBtc / formatBtcAmount~~ ✅ FIXED
+### 23. Unicode arrow literals should be named constants
 | | |
 |---|---|
-| **Files** | `ui/TransactionReviewScreen.kt:211`, `nostr/NostrInbox.kt:42` |
-| **Consensus** | System Architect, Android Engineer, Rubyist (3/4) |
+| **File** | `ui/TransactionReviewScreen.kt:89,111` |
+| **Consensus** | Rubyist (1/5) |
 
-~~Two functions doing `"%.8f BTC".format(satoshis / 100_000_000.0)`. Create a shared `Formatters.kt` utility.~~
-
-**Fixed:** Created `ui/Formatters.kt` with single `formatBtcAmount()` function. Removed duplicate from `NostrInbox.kt` and private `formatBtc()` from `TransactionReviewScreen.kt`. Updated imports in `InboxRepository` and `InboxRepositoryTest`. 5 JVM unit tests added in `FormattersTest.kt`.
+**Fix:** `const val OUTGOING_ARROW = "→"` / `const val RETURN_ARROW = "←"`
 
 ---
 
-### ~~29. Consolidate clipboard copy pattern~~ ✅ FIXED
+### 24. `HARDENED` constant redefined in multiple places
 | | |
 |---|---|
-| **Files** | `ui/HomeScreen.kt:86-89`, `ui/SigningScreen.kt:121-124`, `ui/ErrorScreen.kt:36-38` |
-| **Consensus** | Rubyist |
+| **Files** | `psbt_parser.py:175`, `tests/test_psbt_parser.py:120,197,286` |
+| **Consensus** | Pythonista (1/5) |
 
-~~Same ClipboardManager + ClipData + Toast pattern repeated 3 times.~~
-
-~~**Fix:** Extract `copyToClipboard(context, label, text)` utility.~~
-
-**Fixed:** Extracted `copyToClipboard(context, label, text, toast)` into `ui/Formatters.kt`. Replaced 4 duplicate patterns (HomeScreen, SigningScreen, ErrorScreen, EncryptPassphraseScreen). Removed unused `ClipData`/`ClipboardManager`/`Toast` imports from all 4 files.
+**Fix:** Define once at module level in `psbt_parser.py`, import in tests.
 
 ---
 
-### ~~30. Extract magic numbers as named constants~~ ✅ FIXED
+### 25. Magic byte `0x13` undocumented in signer.py
 | | |
 |---|---|
-| **File** | `viewmodel/SignerViewModel.kt` (lines 155, 292, 570), `nostr/NostrReceiver.kt:105` |
-| **Consensus** | Rubyist |
+| **File** | `signer.py:228` |
+| **Consensus** | Pythonista (1/5) |
 
-~~`86_400`, `86_400 * 7`, `1_000_000` (fee threshold), `50` (label max), `86400` (subscription lookback).~~
-
-~~**Fix:** Named constants: `PENDING_EXPIRY_SECONDS`, `SIGNED_EXPIRY_SECONDS`, `HIGH_FEE_THRESHOLD_SATS`, `MAX_LABEL_LENGTH`.~~
-
-**Fixed:** Extracted 6 named constants into `ui/Formatters.kt`: `SECONDS_PER_DAY`, `PENDING_EXPIRY_SECONDS`, `SIGNED_EXPIRY_SECONDS`, `SUBSCRIPTION_LOOKBACK_SECONDS`, `HIGH_FEE_THRESHOLD_SATS`, `MAX_LABEL_LENGTH`. Replaced all magic numbers across InboxRepository, NostrReceiver, NostrInbox, SignerViewModel, ContactRepository, TransactionReviewScreen, and ContactsScreen.
+**Fix:** `PSBT_IN_TAP_KEY_SIG = b"\x13"` with BIP-371 reference.
 
 ---
 
-### ~~31. Remove unused navigation-compose dependency~~ ✅ FIXED
+### 26. `match/case` modernization opportunity
 | | |
 |---|---|
-| **File** | `app/build.gradle.kts:74` |
-| **Consensus** | System Architect, Android Engineer (2/4) |
+| **File** | `signer.py:101-142` (`detect_script_type`) |
+| **Consensus** | Pythonista (1/5) |
 
-~~App uses sealed-class state machine, not Jetpack Navigation. Dead dependency.~~
-
-**Fixed:** Removed `navigation-compose` from `build.gradle.kts` and its version/library entries from `libs.versions.toml`.
-
----
-
-### ~~32. Remove unused DAO methods (exists, upsert)~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `data/InboxDao.kt:26-30` |
-| **Consensus** | Android Engineer |
-
-~~`exists()` and `upsert()` declared but only used in tests, not production. Production uses `insertIgnore` and targeted updates.~~
-
-**Fixed:** Removed `exists()` and `upsert()` from `InboxDao`. Replaced all `dao.upsert()` calls in `InboxDaoTest` with `dao.insertIgnore()`. Removed `exists_returnsCorrectCount` test and two upsert-specific tests, added `insertIgnore_andGetAll_returnsItem` replacement.
-
----
-
-### ~~33. Enable R8 minification for release builds~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `app/build.gradle.kts:29` |
-| **Consensus** | System Architect, Android Engineer (2/4) |
-
-~~`isMinifyEnabled = false` means release APK ships with full debug symbols. Requires ProGuard rules for Chaquopy, Room, and secp256k1-kmp.~~
-
-**Fixed:** Enabled R8 with `isMinifyEnabled = true` and `isShrinkResources = true` in the release build type. Created `app/proguard-rules.pro` with keep rules for: Chaquopy bridge classes accessed from Python via reflection (SigningBridge, UsbBridge, SigningCallback, SigningCallbackImpl), secp256k1-kmp JNI classes, ZXing, and dontwarn rules for Google Tink's compile-only Error Prone annotations. Release APK reduced from 68MB to 40MB (41% smaller).
-
----
-
-### ~~34. Lazy-initialize PythonBridge~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `bridge/PythonBridge.kt` |
-| **Consensus** | Android Engineer |
-
-~~`PythonBridge()` calls `Python.getInstance()` eagerly in ViewModel constructor, blocking the main thread on first launch.~~
-
-~~**Fix:** `private val pythonBridge by lazy { PythonBridge() }`.~~
-
-**Fixed:** Made all 4 properties in `PythonBridge` lazy (`py`, `parserModule`, `signerModule`, `jsonModule`). Construction is now instant; Python runtime only initializes when `parsePsbt()` or `signPsbt()` is first called on a background thread. Can't make the instance itself lazy in `SignerViewModelFactory` because it's passed to multiple constructors immediately — but lazy properties achieve the same goal.
-
----
-
-### ~~35. Pin embit dependency version~~ ✅ FIXED
-| | |
-|---|---|
-| **Files** | `requirements-dev.txt`, `app/build.gradle.kts` |
-| **Consensus** | Python Engineer |
-
-~~`embit>=0.7` is unpinned while `trezor==0.13.9` is pinned. A breaking embit change could silently break PSBT parsing.~~
-
-**Fixed:** Pinned `embit==0.8.0` in both `requirements-dev.txt` and `build.gradle.kts` Chaquopy config. Version matches the pre-built wheel in `app/pip_wheels/` and the currently resolved version.
-
----
-
-### ~~36. Fix dead TEST_PSBT_B64 assignment in test_psbt_parser.py~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `tests/test_psbt_parser.py:14-25` |
-| **Consensus** | Python Engineer |
-
-~~First assignment contains a space in the base64 and is immediately overwritten by the corrected version. Dead code.~~
-
-**Fixed:** Removed the dead multi-line assignment (contained a stray space in the base64) and the now-unnecessary comment. Only the compact single-string version remains.
-
----
-
-### ~~37. Taproot signature marking is imprecise for multi-key taproot~~ ✅ FIXED
-| | |
-|---|---|
-| **File** | `remotesigner/psbt_parser.py:230-235` |
-| **Consensus** | Python Engineer |
-
-~~When `has_tap_sig` is True, ALL signers in `taproot_bip32_derivations` are marked signed regardless of which key actually signed.~~
-
-~~**Fix:** Match specific pubkey in `taproot_sigs` against the derivation's pubkey.~~
-
-**Fixed:** Replaced `has_tap_sig` boolean with `tap_signed_pubs` set built from `taproot_sigs` keys. Each signer's `signed` field is now set based on whether that signer's specific pubkey appears in the set. 3 tests added in `TestTaprootSignatureMarking` covering: one-of-three signed, all signed, and none signed.
-
----
-
-## Testing Coverage Map
-
-### Current state (what's well-tested)
-
-| Area | Test Type | Coverage |
-|------|-----------|----------|
-| PSBT parsing | Python unit tests | Good — single-sig, multisig, taproot, address types |
-| Trezor signing E2E | Cassette replay (Python + Android) | Good — happy path |
-| Room DAOs | Instrumented tests | Good — ContactDao, InboxDao, migration |
-| Compose screens | Instrumented UI tests | Good — HomeScreen, TransactionReview, SigningScreen, InboxScreen, navigation |
-| Nostr crypto | Instrumented + JVM tests | Good — Bech32 (JVM), NIP-04, key management |
-| NDEF parsing | JVM unit tests | Good — all text encoding variants |
-| Pure utilities | JVM unit tests | Good — FingerprintValidator, MempoolUrl |
-
-### Gaps to close (ordered by risk)
-
-| Gap | Test Type Needed | Risk Level | Depends On |
-|-----|-----------------|------------|------------|
-| ViewModel state machine | JVM unit tests | **High** | #6 (extract deps) |
-| `_is_psbt_fully_signed` | Python unit tests | **High** | None |
-| ~~Signing error paths~~ | ~~Python unit tests~~ | ~~**Medium**~~ | ~~Done (#18)~~ |
-| ~~NostrReceiver message handling~~ | ~~Instrumented tests~~ | ~~**Medium**~~ | ~~Done (#16)~~ |
-| ~~ContactsScreen UI~~ | ~~Instrumented UI tests~~ | ~~**Medium**~~ | ~~Done (#17)~~ |
-| Broadcast integration | Python integration tests | **Low** | None |
-| ~~Bech32 (move to JVM)~~ | ~~JVM unit tests~~ | ~~**Low**~~ | ~~Done (#15)~~ |
-
-### Testing recommendations
-
-1. **ViewModel unit tests** are the single highest-impact addition. Today, the most complex component is only tested through full-stack E2E requiring an emulator and Chaquopy. Extract dependencies (#6) to enable mock/fake injection, then test state transitions, error propagation, and edge cases.
-
-2. **Python negative-path tests** for signing would catch errors that cassettes can't — cassettes only replay happy paths. Test: truncated PSBT, no matching fingerprint, network mismatch, PSBT size limits.
-
-3. **Move pure-Kotlin tests to JVM** (`Bech32Test`, potentially `NostrEvent` parsing) to reduce the emulator-required test surface. Faster feedback loop, runs in CI without emulator.
-
-4. **Replace Thread.sleep with deterministic sync** in `NostrReceiverTest` to eliminate flaky tests.
+Long if/elif chain could use Python 3.10+ structural pattern matching. Optional.
 
 ---
 
 ## Recommended Execution Order
 
 ```
-Phase 1: Fix bugs (P0, items 1-5)
-  └── All independent, no prerequisites, low risk
+Phase 1: Quick wins (< 2 hours each)
+  #5  Move PassphraseRequest/AccountPathRequest to bridge layer
+  #6  Move constants from ui/ to config/ package
+  #21 Add Locale.ROOT to formatBtcAmount()
+  #20 Extract broadcast button loop
+  #14 Add Log.w() to silent catch blocks
+  #12 Standardize Python type hints
+  #23 Named constants for Unicode arrows
+  #24 HARDENED as module-level constant
+  #25 Named constant for 0x13
 
-Phase 2: Architecture foundations (P1, items 6-8)
-  └── #6 Extract ViewModel → enables #12 ViewModel unit tests
-  └── #7 Typed bridge models → enables compile-time contract checking
-  └── #8 Unified error handling → establishes pattern for all future work
+Phase 2: Test coverage (high ROI)
+  #1  Bridge serialization tests (malformed data)
+  #2  Passphrase cancellation flow tests
+  #3  Account path callback tests
+  #8  Nostr relay reconnection tests
+  #17 Record additional cassettes
 
-Phase 3: Python refactoring (P1, items 9-11)
-  └── #9 Break up sign_psbt → enables #13 and #18 (function-level tests)
-  └── #10-11 Deduplicate script/derivation parsing → reduces bug surface
+Phase 3: Type safety & architecture
+  #4  Type signPsbt() return as sealed class
+  #11 Create Network enum
+  #9  Refine Result state (broadcast sealed class)
+  #10 Error state subtypes
+  #18 State machine transition guards
+  #19 AtomicReference for currentUsbBridge
 
-Phase 4: Test coverage expansion (P2, items 12-18)
-  └── Depends on Phase 2-3 decomposition
-  └── Each test item is independent of others
-
-Phase 5: Quality & polish (P2-P3, items 19-37)
-  └── Fix as you touch the code — no dedicated sprint needed
+Phase 4: Polish (fix as you touch)
+  #7  Set up ktlint + ruff
+  #13 Clean up ParsedTransaction dataclass
+  #15 SaveContact return type
+  #16 Specific Python exception types
+  #22 Extract AddressRow composable
+  #26 Consider match/case (optional)
 ```
-
----
-
-## What All Reviewers Agreed to Preserve
-
-- **Two-language bridge pattern** — clean boundary, well-documented rationale
-- **USB bridge inversion** — correct solution to a hard problem, great comments
-- **Cassette-based E2E testing** — elegant hardware-free testing strategy
-- **Sealed class state machine** — right level of abstraction for this app
-- **Python desktop testability** — all Python modules are Android-agnostic
-- **Room database design** — clean schema, targeted SQL updates, proper migrations
-- **CLAUDE.md documentation** — "one of the best project documentation files" (Rubyist)

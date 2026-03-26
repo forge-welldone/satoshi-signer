@@ -11,10 +11,19 @@ An Android app that imports unsigned Bitcoin PSBTs (Partially Signed Bitcoin Tra
 <p align="center">
   <img src="docs/screenshots/main_screen.jpg" width="250" alt="Home screen with Nostr QR code, file picker, and inbox">
   &nbsp;&nbsp;
-  <img src="docs/screenshots/tx_overview.jpg" width="250" alt="Transaction review showing inputs, outputs, change, and fee">
-  &nbsp;&nbsp;
-  <img src="docs/screenshots/passphrase_required.jpg" width="250" alt="Passphrase entry dialog with Trezor, phone, and NFC options">
+  <img src="docs/screenshots/transaction_details.jpg" width="250" alt="Transaction details showing inputs, outputs, fee, and signer info">
 </p>
+
+<details>
+<summary>More screenshots</summary>
+<p align="center">
+  <img src="docs/screenshots/passphrase_prompt.jpg" width="250" alt="Passphrase entry dialog with Trezor, phone, and NFC options">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/signed_screen.jpg" width="250" alt="Transaction signed with broadcast and copy hex options">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/encrypt_passphrase.jpg" width="250" alt="Encrypt passphrase for NFC tag">
+</p>
+</details>
 
 ## Why
 
