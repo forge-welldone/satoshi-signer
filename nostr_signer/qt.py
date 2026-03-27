@@ -42,8 +42,8 @@ KEEP_DELAY = 24 * 60 * 60  # 24 hours
 WK_PRIVKEY = "nostr_signer_privkey"
 WK_RECIPIENT_NPUB = "nostr_signer_recipient_npub"
 
-# Global config keys
-from .nostr_signer import (
+# Address book helpers (no external deps — safe to import in Electrum)
+from .helpers import (
     CK_CONTACTS, get_contacts, save_contacts, extract_npub,
 )
 

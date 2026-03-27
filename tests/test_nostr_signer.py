@@ -339,7 +339,7 @@ class TestKeyManagement:
 # npub extraction from combo box display text
 # ---------------------------------------------------------------------------
 
-from nostr_signer.nostr_signer import extract_npub
+from nostr_signer.helpers import extract_npub
 
 
 class TestExtractNpub:
@@ -371,7 +371,7 @@ class TestExtractNpub:
 # Contacts helpers (config-based address book)
 # ---------------------------------------------------------------------------
 
-from nostr_signer.nostr_signer import get_contacts, save_contacts
+from nostr_signer.helpers import get_contacts, save_contacts
 
 
 class FakeConfig:
