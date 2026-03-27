@@ -423,13 +423,15 @@ ln -s "$(pwd)/nostr_signer" /path/to/electrum/electrum/plugins/nostr_signer
 
 ```
 nostr_signer/
-    manifest.json       # Plugin metadata
+    manifest.json       # Plugin metadata (name, version, available_for)
     __init__.py         # Package marker
     nostr_signer.py     # Standalone NIP-04 crypto (testable without Electrum)
+    helpers.py          # Address book helpers (no external deps)
     qt.py               # Electrum Qt plugin: UI hooks, relay publishing
 ```
 
 - `qt.py` — the Electrum entry point. Uses `electrum_aionostr.Manager` for relay connections and `PrivateKey.encrypt_message()` for NIP-04 encryption
+- `helpers.py` — pure functions for address book (contacts config access, npub parsing). No external deps so it's importable from both Electrum and desktop tests.
 - `nostr_signer.py` — standalone reference implementation using `embit` + `pyaes`, testable with plain pytest
 
 ### Testing
