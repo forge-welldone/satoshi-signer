@@ -43,7 +43,7 @@ WK_PRIVKEY = "nostr_signer_privkey"
 WK_RECIPIENT_NPUB = "nostr_signer_recipient_npub"
 
 # Global config keys
-from nostr_signer.nostr_signer import (
+from .nostr_signer import (
     CK_CONTACTS, get_contacts, save_contacts, extract_npub,
 )
 
