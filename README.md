@@ -221,6 +221,15 @@ python -m pytest tests/ -v
 
 Tests include unit tests for all Python modules plus end-to-end signing tests that replay pre-recorded Trezor USB exchanges (no hardware needed).
 
+### GitHub Actions CI
+
+GitHub Actions runs the fast automated checks on every push and pull request:
+
+- `python -m pytest tests/ -v`
+- `./gradlew testDebugUnitTest`
+
+Android instrumentation tests run in a separate workflow via manual trigger only. That keeps normal PR feedback fast while still allowing full emulator coverage on demand.
+
 ### Desktop Signing with Real Trezor
 
 You can test the full signing flow on your Mac without deploying to Android. Requires `libusb` (`brew install libusb`).
