@@ -4,9 +4,13 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.remotesigner.nfc.NfcReadResult
 import com.remotesigner.ui.EncryptPassphraseScreen
 import com.remotesigner.viewmodel.AppState
@@ -418,7 +422,7 @@ class ScreenRenderTest {
         composeTestRule.onNodeWithText("Read from NFC tag").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Cancel")[0].performClick()
+        composeTestRule.onNodeWithTag("nfc-waiting-cancel").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
         composeTestRule.onNodeWithText("Read from NFC tag").assertIsDisplayed()
@@ -426,6 +430,8 @@ class ScreenRenderTest {
 
     @Test
     fun signingScreen_passphraseDialog_nfcErrorShown() {
+        var nfcTagResult by mutableStateOf<NfcReadResult?>(null)
+
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -434,12 +440,15 @@ class ScreenRenderTest {
                     passphraseRequest = TestFixtures.passphraseRequestOnDevice,
                     accountPathRequest = null,
                     nfcAvailable = true,
-                    nfcTagResult = NfcReadResult.Error("No text found on tag"),
+                    nfcTagResult = nfcTagResult,
                     onCancel = {},
                 )
             }
         }
         composeTestRule.onNodeWithText("Read from NFC tag").performClick()
+        composeTestRule.runOnIdle {
+            nfcTagResult = NfcReadResult.Error("No text found on tag")
+        }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("No text found on tag").assertIsDisplayed()
         composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
