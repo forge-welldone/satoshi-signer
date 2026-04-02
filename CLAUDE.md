@@ -48,6 +48,11 @@ python tests/sign_cli.py --network test sign path/to/file.psbt --record tests/ca
 
 Python test setup requires a venv: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`
 
+GitHub Actions uses two workflows:
+
+- `.github/workflows/ci.yml` runs `python -m pytest tests/ -v` and `./gradlew testDebugUnitTest` on pushes and pull requests
+- `.github/workflows/android-instrumentation.yml` runs `./gradlew connectedDebugAndroidTest` only via manual trigger
+
 Desktop signing also requires `brew install libusb` (Trezor Safe 3 uses WebUSB on macOS).
 
 Android test setup requires a running emulator: `emulator -avd test_device -no-audio &`
@@ -126,6 +131,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - `app/schemas/` — Room schema JSON exports for migration testing
 - `tests/` — Desktop Python tests (pytest), desktop bridge classes, CLI, recorded cassettes
 - `tests/cassettes/` — Recorded Trezor USB exchanges for hardware-free E2E test replay
+- `.github/workflows/` — GitHub Actions workflows for fast CI and manual Android instrumentation runs
 - `docs/superpowers/specs/` — Design specifications
 - `nostr_signer/` — Electrum plugin for sending PSBTs over Nostr (uses `electrum_aionostr` + `electrum_ecc`), with global address book for saved signer contacts
 
@@ -167,6 +173,7 @@ Compose UI (7 screens) → SignerViewModel (composition root, sealed class state
 - **Always use TDD** — Write or update tests before writing implementation code when writing or refactoring code.
 - **Keep all test suites in sync** — When changing behavior, update both Android instrumented tests (`app/src/androidTest/`) and Python tests (`tests/`) as needed. Don't leave tests broken or stale.
 - **Keep docs current** — After finishing any feature or refactoring, update `CLAUDE.md` (architecture, source layout, conventions) and `README.md` (project structure, dependencies, features) to reflect the changes. Stale docs cause confusion in future sessions.
+- **CI split is intentional** — Keep fast GitHub Actions checks (`pytest`, `testDebugUnitTest`) separate from emulator-backed instrumentation. Manual instrumentation runs are slower and more failure-prone than the fast lane, so don't merge them into the default PR workflow without a concrete reason.
 
 ## Targets
 
