@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -302,7 +303,7 @@ private fun PassphraseDialog(
                         onStopNfcWaiting()
                         showNfcWaiting = false
                         nfcErrorMessage = null
-                    }) {
+                    }, modifier = Modifier.testTag("nfc-waiting-cancel")) {
                         Text("Cancel")
                     }
                 }
