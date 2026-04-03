@@ -1,0 +1,111 @@
+name: Release Android App
+
+on:
+  push:
+    tags:
+      - 'android-v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release Android app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: false
+
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate tag format
+        run: |
+          if ! printf %s "$GITHUB_REF_NAME" | grep -Eq '^android-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            printf 'Tag %s must match android-vX.Y.Z\n' "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Extract version from tag
+        run: printf 'VERSION=%s\n' "${GITHUB_REF_NAME#android-v}" >> "$GITHUB_ENV"
+
+      - name: Validate app version matches tag
+        run: |
+          app_version="$(python3 -c 'from pathlib import Path; content = Path("app/build.gradle.kts").read_text(encoding="utf-8"); print(content.split("versionName = \"", 1)[1].split("\"", 1)[0])')"
+          if [ "$app_version" != "$VERSION" ]; then
+            printf 'Tag version %s does not match app version %s\n' "$VERSION" "$app_version" >&2
+            exit 1
+          fi
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Install Android SDK packages
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Reconstruct signing material
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PROPERTIES: ${{ secrets.RELEASE_KEYSTORE_PROPERTIES }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            printf 'Missing required secret: %s\n' "RELEASE_KEYSTORE_BASE64" >&2
+            exit 1
+          fi
+          if [ -z "$RELEASE_KEYSTORE_PROPERTIES" ]; then
+            printf 'Missing required secret: %s\n' "RELEASE_KEYSTORE_PROPERTIES" >&2
+            exit 1
+          fi
+          printf %s "$RELEASE_KEYSTORE_BASE64" | base64 --decode > release.keystore
+          printf %s "$RELEASE_KEYSTORE_PROPERTIES" > keystore.properties
+
+      - name: Create local.properties
+        run: printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+
+      - name: Capture release artifact paths
+        run: |
+          artifact_path="app/build/outputs/apk/release/app-release.apk"
+          printf 'ARTIFACT_PATH=%s\n' "$artifact_path" >> "$GITHUB_ENV"
+          printf 'ARTIFACT_NAME=%s\n' "$(basename "$artifact_path")" >> "$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$(dirname "$artifact_path")" >> "$GITHUB_ENV"
+          printf 'CHECKSUM_PATH=%s/%s.sha256\n' "$(dirname "$artifact_path")" "$(basename "$artifact_path")" >> "$GITHUB_ENV"
+
+      - name: Generate sha256
+        run: |
+          cd "$ARTIFACT_DIR"
+          shasum -a 256 "$ARTIFACT_NAME" > "$ARTIFACT_NAME.sha256"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "Android app v$VERSION"
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "$ARTIFACT_PATH" \
+            "$CHECKSUM_PATH" \
+            --clobber

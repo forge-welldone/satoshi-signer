@@ -1,0 +1,68 @@
+name: Release Electrum Plugin
+
+on:
+  push:
+    tags:
+      - 'electrum-v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release Electrum plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate tag format
+        run: |
+          if ! printf %s "$GITHUB_REF_NAME" | grep -Eq '^electrum-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            printf 'Tag %s must match electrum-vX.Y.Z\n' "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Extract version from tag
+        run: printf 'VERSION=%s\n' "${GITHUB_REF_NAME#electrum-v}" >> "$GITHUB_ENV"
+
+      - name: Validate manifest version matches tag
+        run: |
+          manifest_version="$(python3 -c 'import json; print(json.load(open("nostr_signer/manifest.json", encoding="utf-8"))["version"])')"
+          if [ "$manifest_version" != "$VERSION" ]; then
+            printf 'Tag version %s does not match manifest version %s\n' "$VERSION" "$manifest_version" >&2
+            exit 1
+          fi
+
+      - name: Package Electrum plugin
+        run: |
+          artifact_path="$(bash scripts/package_electrum_plugin.sh)"
+          case "$artifact_path" in
+            *.zip) ;;
+            *)
+              printf 'Expected zip artifact, got %s\n' "$artifact_path" >&2
+              exit 1
+              ;;
+          esac
+          printf 'ARTIFACT_PATH=%s\n' "$artifact_path" >> "$GITHUB_ENV"
+          printf 'ARTIFACT_NAME=%s\n' "$(basename "$artifact_path")" >> "$GITHUB_ENV"
+          printf 'ARTIFACT_DIR=%s\n' "$(dirname "$artifact_path")" >> "$GITHUB_ENV"
+          printf 'CHECKSUM_PATH=%s/%s.sha256\n' "$(dirname "$artifact_path")" "$(basename "$artifact_path")" >> "$GITHUB_ENV"
+
+      - name: Generate sha256
+        run: |
+          cd "$ARTIFACT_DIR"
+          shasum -a 256 "$ARTIFACT_NAME" > "$ARTIFACT_NAME.sha256"
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "Electrum plugin v$VERSION"
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "$ARTIFACT_PATH" \
+            "$CHECKSUM_PATH" \
+            --clobber

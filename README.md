@@ -230,6 +230,20 @@ GitHub Actions runs the fast automated checks on every push and pull request:
 
 Android instrumentation tests run in a separate workflow via manual trigger only. That keeps normal PR feedback fast while still allowing full emulator coverage on demand.
 
+### Releases
+
+This repo ships two releasable artifacts:
+
+- Android app release APK
+- Electrum plugin zip (`nostr_signer`)
+
+Release automation is tag-driven:
+
+- `android-vX.Y.Z` builds and publishes the Android release from `app/build.gradle.kts` `versionName`
+- `electrum-vX.Y.Z` builds and publishes the Electrum plugin from `nostr_signer/manifest.json` `version`
+
+Both release workflows generate a `.sha256` file next to the built artifact and upload the artifact plus its checksum to the matching GitHub release. The Electrum plugin is packaged by `scripts/package_electrum_plugin.sh`.
+
 ### Desktop Signing with Real Trezor
 
 You can test the full signing flow on your Mac without deploying to Android. Requires `libusb` (`brew install libusb`).

@@ -77,6 +77,20 @@ keyPassword=<password>
 
 The release keystore must be backed up separately — losing it means the release app cannot be updated in place.
 
+## Release Artifacts
+
+This repository has two releasable artifacts:
+
+- Android app APK, versioned from `app/build.gradle.kts` `versionName`
+- Electrum plugin zip, versioned from `nostr_signer/manifest.json` `version`
+
+Release tags are artifact-specific:
+
+- `android-vX.Y.Z`
+- `electrum-vX.Y.Z`
+
+Both GitHub release workflows publish the built artifact and a companion `.sha256` file. The Electrum plugin release path packages the zip with `scripts/package_electrum_plugin.sh`.
+
 ## Architecture
 
 **Two-language bridge pattern:** Kotlin handles UI, USB, Android lifecycle, and transaction broadcasting. Python handles Bitcoin signing logic (PSBT parsing, trezorlib signing). They communicate via Chaquopy.
