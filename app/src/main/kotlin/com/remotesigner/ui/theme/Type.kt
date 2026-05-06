@@ -9,9 +9,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.remotesigner.R
 
-val GeistFamily = FontFamily(Font("fonts/Geist-Regular.ttf", FontWeight.Normal))
-val GeistMonoFamily = FontFamily(Font("fonts/GeistMono-Regular.ttf", FontWeight.Normal))
+// Geist + Geist Mono are bundled at Regular only (the only weights shipped in
+// the SIG-1 handoff). Anywhere the prototype calls for a heavier weight, we
+// fall back to Regular instead of letting Compose synthesise a fake bold —
+// adding Geist Medium is tracked as a SIG-2 follow-up.
+val GeistFamily = FontFamily(Font(R.font.geist_regular, FontWeight.Normal))
+val GeistMonoFamily = FontFamily(Font(R.font.geist_mono_regular, FontWeight.Normal))
 
 @Immutable
 data class VaultTypography(
@@ -28,13 +33,13 @@ data class VaultTypography(
 fun buildVaultTypography(): VaultTypography = VaultTypography(
     display = TextStyle(
         fontFamily = GeistFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 40.sp,
         letterSpacing = (-0.03).em,
     ),
     title = TextStyle(
         fontFamily = GeistFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 17.sp,
         letterSpacing = (-0.02).em,
     ),
@@ -67,7 +72,7 @@ fun buildVaultTypography(): VaultTypography = VaultTypography(
     ),
     eyebrow = TextStyle(
         fontFamily = GeistMonoFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 10.sp,
         letterSpacing = 0.14.em,
     ),
@@ -86,11 +91,11 @@ fun vaultMaterialTypography(t: VaultTypography): Typography = Typography(
     headlineSmall = t.title,
     titleLarge = t.title,
     titleMedium = t.title.copy(fontSize = 15.sp),
-    titleSmall = t.bodyDim.copy(fontWeight = FontWeight.Medium),
+    titleSmall = t.bodyDim,
     bodyLarge = t.body.copy(fontSize = 15.sp),
     bodyMedium = t.body,
     bodySmall = t.bodyDim,
-    labelLarge = t.body.copy(fontWeight = FontWeight.Medium),
-    labelMedium = t.bodyDim.copy(fontWeight = FontWeight.Medium),
+    labelLarge = t.body,
+    labelMedium = t.bodyDim,
     labelSmall = t.caption,
 )

@@ -19,7 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+
+const val BOTTOM_SHEET_SCRIM_TAG = "bottomSheetScrim"
 import com.remotesigner.ui.motion.tweenFade
 import com.remotesigner.ui.motion.tweenSlideUp
 import com.remotesigner.ui.theme.LocalVaultColors
@@ -44,10 +48,12 @@ fun BottomSheetOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .testTag(BOTTOM_SHEET_SCRIM_TAG)
                     .background(Color.Black.copy(alpha = 0.55f))
                     .clickable(
                         interactionSource = noIndication,
                         indication = null,
+                        role = Role.Button,
                         onClick = onDismiss,
                     ),
             )

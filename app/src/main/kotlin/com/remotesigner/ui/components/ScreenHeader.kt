@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.remotesigner.ui.icons.AppIcons
 import com.remotesigner.ui.theme.LocalVaultColors
@@ -61,7 +62,7 @@ private fun BackButton(onClick: () -> Unit) {
             .size(36.dp)
             .clip(shapes.small)
             .border(1.dp, colors.line, shapes.small)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         androidx.compose.foundation.Image(
