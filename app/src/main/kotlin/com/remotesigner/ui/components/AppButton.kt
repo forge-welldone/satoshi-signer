@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.remotesigner.ui.theme.LocalVaultColors
 import com.remotesigner.ui.theme.LocalVaultShapes
@@ -68,6 +69,7 @@ fun AppButton(
                 interactionSource = interactionSource,
                 indication = null,
                 enabled = enabled,
+                role = Role.Button,
                 onClick = onClick,
             )
             .padding(horizontal = 20.dp),
@@ -80,10 +82,7 @@ fun AppButton(
             if (leadingIcon != null) leadingIcon()
             Text(
                 text = text,
-                style = (if (small) typography.bodyDim else typography.body).copy(
-                    color = fg,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
-                ),
+                style = (if (small) typography.bodyDim else typography.body).copy(color = fg),
             )
         }
     }

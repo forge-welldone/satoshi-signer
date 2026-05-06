@@ -15,6 +15,7 @@ fun Addr(
     tail: Int = 8,
     color: Color? = null,
 ) {
+    require(head >= 0 && tail >= 0) { "head/tail must be non-negative (head=$head, tail=$tail)" }
     val colors = LocalVaultColors.current
     val typography = LocalVaultTypography.current
     val display = if (value.length > head + tail + 3) {

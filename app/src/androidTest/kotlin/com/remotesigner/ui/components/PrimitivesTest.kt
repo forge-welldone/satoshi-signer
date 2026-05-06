@@ -133,20 +133,30 @@ class PrimitivesTest {
 
     @Test
     fun bottomSheet_invokesDismiss_onScrimClick() {
+        var dismissed = 0
         composeTestRule.setContent {
             val visible = remember { mutableStateOf(true) }
             SatoshiSignerTheme {
                 Box(Modifier.fillMaxSize().testTag("root")) {
                     BottomSheetOverlay(
                         visible = visible.value,
-                        onDismiss = { visible.value = false },
+                        onDismiss = {
+                            dismissed++
+                            visible.value = false
+                        },
                     ) {
-                        androidx.compose.material3.Text("Sheet body", modifier = Modifier.testTag("body"))
+                        androidx.compose.material3.Text(
+                            "Sheet body",
+                            modifier = Modifier.testTag("body"),
+                        )
                     }
                 }
             }
         }
         composeTestRule.onNodeWithTag("body").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(BOTTOM_SHEET_SCRIM_TAG).performClick()
+        composeTestRule.waitForIdle()
+        assert(dismissed == 1) { "expected scrim click to dismiss once, got $dismissed" }
     }
 
     @Test
