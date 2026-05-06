@@ -2,12 +2,13 @@ package com.remotesigner.ui.motion
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.State
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.ui.unit.IntOffset
 
 private const val SpinDurationMs = 800
 private const val PulseDurationMs = 1400
@@ -42,6 +43,6 @@ fun rememberSsPulse(): State<Float> {
     )
 }
 
-fun tweenSlideUp() = tween<Int>(durationMillis = SlideUpDurationMs)
+fun tweenSlideUp() = tween<IntOffset>(durationMillis = SlideUpDurationMs)
 
 fun tweenFade() = tween<Float>(durationMillis = FadeDurationMs)
