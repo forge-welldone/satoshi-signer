@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.remotesigner.ui.branding.AppLogo
 import com.remotesigner.ui.theme.SatoshiSignerTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,7 +35,7 @@ class PrimitivesTest {
             }
         }
         composeTestRule.onNodeWithText("Open PSBT file").performClick()
-        assert(clicks == 1)
+        assertEquals(1, clicks)
     }
 
     @Test
@@ -56,7 +57,7 @@ class PrimitivesTest {
             }
         }
         composeTestRule.onNodeWithText("Disabled").performClick()
-        assert(clicks == 0)
+        assertEquals(0, clicks)
     }
 
     @Test
@@ -128,7 +129,7 @@ class PrimitivesTest {
             }
         }
         composeTestRule.onNodeWithContentDescription("Back").performClick()
-        assert(backs == 1)
+        assertEquals(1, backs)
     }
 
     @Test
@@ -156,7 +157,7 @@ class PrimitivesTest {
         composeTestRule.onNodeWithTag("body").assertIsDisplayed()
         composeTestRule.onNodeWithTag(BOTTOM_SHEET_SCRIM_TAG).performClick()
         composeTestRule.waitForIdle()
-        assert(dismissed == 1) { "expected scrim click to dismiss once, got $dismissed" }
+        assertEquals(1, dismissed)
     }
 
     @Test

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,7 +83,10 @@ fun AppButton(
             if (leadingIcon != null) leadingIcon()
             Text(
                 text = text,
-                style = (if (small) typography.bodyDim else typography.body).copy(color = fg),
+                style = (if (small) typography.bodyDim else typography.body).copy(
+                    color = fg,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                ),
             )
         }
     }
