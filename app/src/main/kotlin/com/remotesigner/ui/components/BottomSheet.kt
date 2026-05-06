@@ -22,12 +22,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-
-const val BOTTOM_SHEET_SCRIM_TAG = "bottomSheetScrim"
 import com.remotesigner.ui.motion.tweenFade
 import com.remotesigner.ui.motion.tweenSlideUp
 import com.remotesigner.ui.theme.LocalVaultColors
 import com.remotesigner.ui.theme.LocalVaultShapes
+
+const val BOTTOM_SHEET_SCRIM_TAG = "bottomSheetScrim"
 
 @Composable
 fun BottomSheetOverlay(
