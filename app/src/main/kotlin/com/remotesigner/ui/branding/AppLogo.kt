@@ -63,13 +63,13 @@ fun AppLogo(
         val chip = Path().apply {
             moveTo(40f * s, 32f * s)
             lineTo(68f * s, 32f * s)
-            quadraticBezierTo(76f * s, 32f * s, 76f * s, 40f * s)
+            quadraticTo(76f * s, 32f * s, 76f * s, 40f * s)
             lineTo(76f * s, 68f * s)
-            quadraticBezierTo(76f * s, 76f * s, 68f * s, 76f * s)
+            quadraticTo(76f * s, 76f * s, 68f * s, 76f * s)
             lineTo(40f * s, 76f * s)
-            quadraticBezierTo(32f * s, 76f * s, 32f * s, 68f * s)
+            quadraticTo(32f * s, 76f * s, 32f * s, 68f * s)
             lineTo(32f * s, 40f * s)
-            quadraticBezierTo(32f * s, 32f * s, 40f * s, 32f * s)
+            quadraticTo(32f * s, 32f * s, 40f * s, 32f * s)
             close()
         }
         drawPath(
