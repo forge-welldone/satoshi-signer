@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.remotesigner.ui.theme.LocalVaultColors
+import java.util.Locale
 import com.remotesigner.ui.theme.LocalVaultShapes
 import com.remotesigner.ui.theme.LocalVaultTypography
 
@@ -48,7 +49,7 @@ fun Pill(
     ) {
         if (leadingIcon != null) leadingIcon()
         Text(
-            text = text.uppercase(),
+            text = text.uppercase(Locale.ROOT),
             style = typography.eyebrow.copy(color = fg),
         )
     }

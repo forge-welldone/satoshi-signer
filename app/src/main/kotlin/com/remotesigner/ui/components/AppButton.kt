@@ -40,6 +40,7 @@ fun AppButton(
     leadingIcon: (@Composable () -> Unit)? = null,
     small: Boolean = false,
     enabled: Boolean = true,
+    fillMaxWidth: Boolean = true,
 ) {
     val colors = LocalVaultColors.current
     val typography = LocalVaultTypography.current
@@ -59,7 +60,7 @@ fun AppButton(
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
+            .let { if (fillMaxWidth) it.fillMaxWidth() else it }
             .height(height)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .alpha(if (enabled) 1f else 0.45f)
