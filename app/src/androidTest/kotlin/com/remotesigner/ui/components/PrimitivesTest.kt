@@ -7,7 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -70,13 +72,17 @@ class PrimitivesTest(private val darkTheme: Boolean) {
     }
 
     @Test
-    fun appButton_disabled_swallowsClicks() {
-        var clicks = 0
+    fun appButton_disabled_exposesNoClickAction() {
+        // Compose's `clickable(enabled = false)` strips the OnClick semantics
+        // action, so calling performClick() on the disabled node would fail
+        // the test outright. Verify the disabled state instead.
         setThemedContent {
-            AppButton(text = "Disabled", onClick = { clicks++ }, enabled = false)
+            AppButton(text = "Disabled", onClick = {}, enabled = false)
         }
-        composeTestRule.onNodeWithText("Disabled").performClick()
-        assertEquals(0, clicks)
+        composeTestRule.onNodeWithText("Disabled")
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+            .assertHasNoClickAction()
     }
 
     @Test

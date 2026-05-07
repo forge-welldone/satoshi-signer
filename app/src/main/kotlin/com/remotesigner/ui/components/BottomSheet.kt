@@ -54,6 +54,7 @@ fun BottomSheetOverlay(
                         interactionSource = noIndication,
                         indication = null,
                         role = Role.Button,
+                        onClickLabel = "Dismiss",
                         onClick = onDismiss,
                     ),
             )

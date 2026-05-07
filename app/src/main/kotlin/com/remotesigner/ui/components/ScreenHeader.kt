@@ -31,7 +31,6 @@ fun ScreenHeader(
 ) {
     val colors = LocalVaultColors.current
     val typography = LocalVaultTypography.current
-    val shapes = LocalVaultShapes.current
     Row(
         modifier = modifier
             .fillMaxWidth()
