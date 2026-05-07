@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.remotesigner.ui.theme.LocalVaultColors
 import com.remotesigner.ui.theme.LocalVaultTypography
+import java.util.Locale
 
 @Composable
 fun Eyebrow(
@@ -16,7 +17,7 @@ fun Eyebrow(
     val colors = LocalVaultColors.current
     val typography = LocalVaultTypography.current
     Text(
-        text = text.uppercase(),
+        text = text.uppercase(Locale.ROOT),
         style = typography.eyebrow.copy(color = color ?: colors.textMute),
         modifier = modifier,
     )

@@ -2,6 +2,7 @@ package com.remotesigner.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -18,43 +19,61 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.runners.Parameterized
 
-@RunWith(AndroidJUnit4::class)
-class PrimitivesTest {
+/**
+ * Each primitive renders in both `darkTheme = true` and `darkTheme = false`
+ * so light-only or dark-only regressions surface in CI. The class is
+ * parameterised over `darkTheme` and every test goes through
+ * [setThemedContent], so adding a new primitive test gives both modes for
+ * free.
+ */
+@RunWith(Parameterized::class)
+class PrimitivesTest(private val darkTheme: Boolean) {
+
+    companion object {
+        @JvmStatic
+        @Parameterized.Parameters(name = "darkTheme={0}")
+        fun modes(): List<Array<Any>> = listOf(arrayOf(true), arrayOf(false))
+    }
 
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    @Test
-    fun appButton_dark_clicks() {
-        var clicks = 0
+    private fun setThemedContent(content: @Composable () -> Unit) {
         composeTestRule.setContent {
-            SatoshiSignerTheme(darkTheme = true) {
-                AppButton(text = "Open PSBT file", onClick = { clicks++ })
-            }
+            SatoshiSignerTheme(darkTheme = darkTheme) { content() }
+        }
+    }
+
+    @Test
+    fun appButton_clicks() {
+        var clicks = 0
+        setThemedContent {
+            AppButton(text = "Open PSBT file", onClick = { clicks++ })
         }
         composeTestRule.onNodeWithText("Open PSBT file").performClick()
         assertEquals(1, clicks)
     }
 
     @Test
-    fun appButton_light_renders() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme(darkTheme = false) {
-                AppButton(text = "Sign on Trezor", onClick = {})
+    fun appButton_renders_allVariants() {
+        setThemedContent {
+            Box(Modifier.testTag("variants")) {
+                AppButton(text = "Primary", onClick = {}, variant = AppButtonVariant.Primary)
+                AppButton(text = "Secondary", onClick = {}, variant = AppButtonVariant.Secondary)
+                AppButton(text = "Ghost", onClick = {}, variant = AppButtonVariant.Ghost)
+                AppButton(text = "Danger", onClick = {}, variant = AppButtonVariant.Danger)
             }
         }
-        composeTestRule.onNodeWithText("Sign on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("variants").assertIsDisplayed()
     }
 
     @Test
     fun appButton_disabled_swallowsClicks() {
         var clicks = 0
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                AppButton(text = "Disabled", onClick = { clicks++ }, enabled = false)
-            }
+        setThemedContent {
+            AppButton(text = "Disabled", onClick = { clicks++ }, enabled = false)
         }
         composeTestRule.onNodeWithText("Disabled").performClick()
         assertEquals(0, clicks)
@@ -62,29 +81,24 @@ class PrimitivesTest {
 
     @Test
     fun pill_renders_eachTone() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                Box {
-                    Pill(text = "Connected", tone = PillTone.Good)
-                    Pill(text = "Waiting", tone = PillTone.Warn)
-                    Pill(text = "Offline", tone = PillTone.Bad)
-                    Pill(text = "Active", tone = PillTone.Accent)
-                    Pill(text = "Idle", tone = PillTone.Neutral)
-                }
+        setThemedContent {
+            Box {
+                Pill(text = "Connected", tone = PillTone.Good)
+                Pill(text = "Waiting", tone = PillTone.Warn)
+                Pill(text = "Offline", tone = PillTone.Bad)
+                Pill(text = "Active", tone = PillTone.Accent)
+                Pill(text = "Idle", tone = PillTone.Neutral)
             }
         }
-        // Pill uppercases text
         composeTestRule.onNodeWithText("CONNECTED").assertIsDisplayed()
         composeTestRule.onNodeWithText("OFFLINE").assertIsDisplayed()
     }
 
     @Test
     fun card_displaysContent() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                VaultCard(modifier = Modifier.testTag("card")) {
-                    androidx.compose.material3.Text("Inside card")
-                }
+        setThemedContent {
+            VaultCard(modifier = Modifier.testTag("card")) {
+                androidx.compose.material3.Text("Inside card")
             }
         }
         composeTestRule.onNodeWithTag("card").assertIsDisplayed()
@@ -93,18 +107,14 @@ class PrimitivesTest {
 
     @Test
     fun eyebrow_uppercases() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme { Eyebrow("Inbox") }
-        }
+        setThemedContent { Eyebrow("Inbox") }
         composeTestRule.onNodeWithText("INBOX").assertIsDisplayed()
     }
 
     @Test
     fun labeledRow_displaysLabelAndValue() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                LabeledRow(label = "Fee", value = "0.00000213 BTC")
-            }
+        setThemedContent {
+            LabeledRow(label = "Fee", value = "0.00000213 BTC")
         }
         composeTestRule.onNodeWithText("Fee").assertIsDisplayed()
         composeTestRule.onNodeWithText("0.00000213 BTC").assertIsDisplayed()
@@ -112,10 +122,8 @@ class PrimitivesTest {
 
     @Test
     fun addr_truncatesLong() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                Addr(value = "bc1qmek5jz2m9l4k6s7yqfdjl2mxv3lqmlv6", head = 6, tail = 6)
-            }
+        setThemedContent {
+            Addr(value = "bc1qmek5jz2m9l4k6s7yqfdjl2mxv3lqmlv6", head = 6, tail = 6)
         }
         composeTestRule.onNodeWithText("bc1qme…qmlv6", substring = true).assertIsDisplayed()
     }
@@ -123,10 +131,8 @@ class PrimitivesTest {
     @Test
     fun screenHeader_dispatchesBack() {
         var backs = 0
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                ScreenHeader(title = "Review", onBack = { backs++ })
-            }
+        setThemedContent {
+            ScreenHeader(title = "Review", onBack = { backs++ })
         }
         composeTestRule.onNodeWithContentDescription("Back").performClick()
         assertEquals(1, backs)
@@ -135,22 +141,20 @@ class PrimitivesTest {
     @Test
     fun bottomSheet_invokesDismiss_onScrimClick() {
         var dismissed = 0
-        composeTestRule.setContent {
+        setThemedContent {
             val visible = remember { mutableStateOf(true) }
-            SatoshiSignerTheme {
-                Box(Modifier.fillMaxSize().testTag("root")) {
-                    BottomSheetOverlay(
-                        visible = visible.value,
-                        onDismiss = {
-                            dismissed++
-                            visible.value = false
-                        },
-                    ) {
-                        androidx.compose.material3.Text(
-                            "Sheet body",
-                            modifier = Modifier.testTag("body"),
-                        )
-                    }
+            Box(Modifier.fillMaxSize().testTag("root")) {
+                BottomSheetOverlay(
+                    visible = visible.value,
+                    onDismiss = {
+                        dismissed++
+                        visible.value = false
+                    },
+                ) {
+                    androidx.compose.material3.Text(
+                        "Sheet body",
+                        modifier = Modifier.testTag("body"),
+                    )
                 }
             }
         }
@@ -162,20 +166,16 @@ class PrimitivesTest {
 
     @Test
     fun appLogo_renders() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                AppLogo(modifier = Modifier.testTag("logo"))
-            }
+        setThemedContent {
+            AppLogo(modifier = Modifier.testTag("logo"))
         }
         composeTestRule.onNodeWithTag("logo").assertIsDisplayed()
     }
 
     @Test
     fun spinner_renders() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                Spinner(modifier = Modifier.testTag("spin"))
-            }
+        setThemedContent {
+            Spinner(modifier = Modifier.testTag("spin"))
         }
         composeTestRule.onNodeWithTag("spin").assertIsDisplayed()
     }
