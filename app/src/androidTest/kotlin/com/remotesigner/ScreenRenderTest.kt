@@ -1,9 +1,7 @@
 package com.remotesigner
 
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -111,7 +109,9 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText(state.message).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Signing").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Trezor Safe 3 · USB-C").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Stay offline").assertIsDisplayed()
     }
 
     @Test
@@ -192,10 +192,8 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText(state.message).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Show Log").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Debug Log:").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Copy").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Show log").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Debug log").assertDoesNotExist()
         composeTestRule.onNodeWithText(state.log).assertDoesNotExist()
     }
 
@@ -213,11 +211,10 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Show Log").performClick()
+        composeTestRule.onNodeWithText("Show log").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Hide Log").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Debug Log:").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Copy").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Hide log").assertIsDisplayed()
+        composeTestRule.onNodeWithText("DEBUG LOG").assertIsDisplayed()
         composeTestRule.onNodeWithText(state.log).assertIsDisplayed()
     }
 
@@ -235,12 +232,12 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Show Log").performClick()
+        composeTestRule.onNodeWithText("Show log").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Hide Log").performClick()
+        composeTestRule.onNodeWithText("Hide log").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Show Log").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Debug Log:").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Show log").assertIsDisplayed()
+        composeTestRule.onNodeWithText("DEBUG LOG").assertDoesNotExist()
         composeTestRule.onNodeWithText(state.log).assertDoesNotExist()
     }
 
@@ -257,11 +254,11 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cancel signing").assertIsDisplayed()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_onDeviceAvailable() {
+    fun signingScreen_passphraseSheet_onDeviceAvailable() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -273,16 +270,18 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Passphrase Required").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Choose where to enter your passphrase:").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
-        // Both the dialog and SigningScreen have a "Cancel" — assert both exist
-        composeTestRule.onAllNodesWithText("Cancel").assertCountEquals(2)
+        composeTestRule.onNodeWithText("PASSPHRASE REQUIRED").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Where do you want to enter it?").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Type on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Type on this phone").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Continue").assertIsDisplayed()
+        // The sheet's "Cancel" plus the screen's "Cancel signing"
+        composeTestRule.onNodeWithText("Cancel").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cancel signing").assertIsDisplayed()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_phoneOnly() {
+    fun signingScreen_passphraseSheet_phoneOnly_preselectsPhoneAndShowsField() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -294,13 +293,12 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Passphrase Required").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Less secure than on-device entry").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Submit").assertIsDisplayed()
+        composeTestRule.onNodeWithText("PASSPHRASE REQUIRED").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("passphraseField").assertIsDisplayed()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_switchToTextField() {
+    fun signingScreen_passphraseSheet_phoneMode_revealsPassphraseField() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -312,43 +310,13 @@ class ScreenRenderTest {
                 )
             }
         }
-        // Start on choice screen
-        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
-        // Tap "Enter on phone" to switch to text field
-        composeTestRule.onNodeWithText("Enter on phone").performClick()
+        composeTestRule.onNodeWithText("Type on this phone").performClick()
         composeTestRule.waitForIdle()
-        // Text field and Submit should now appear
-        composeTestRule.onNodeWithText("Less secure than on-device entry").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Submit").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("passphraseField").assertIsDisplayed()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_backToChoices() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                SigningScreen(
-                    message = "Signing...",
-                    log = "",
-                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
-                    accountPathRequest = null,
-                    onCancel = {},
-                )
-            }
-        }
-        // Switch to text field
-        composeTestRule.onNodeWithText("Enter on phone").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Submit").assertIsDisplayed()
-        // Tap "Back" to return to choices
-        composeTestRule.onNodeWithText("Back").performClick()
-        composeTestRule.waitForIdle()
-        // Choice screen should be back
-        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
-    }
-
-    @Test
-    fun signingScreen_passphraseDialog_showsNfcOption_whenAvailable() {
+    fun signingScreen_passphraseSheet_showsNfcOption_whenAvailable() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -361,13 +329,13 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Read from NFC tag").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Type on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Type on this phone").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Tap an NFC tag").assertIsDisplayed()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_hidesNfcOption_whenUnavailable() {
+    fun signingScreen_passphraseSheet_hidesNfcOption_whenUnavailable() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -380,13 +348,13 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Enter on phone").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Read from NFC tag").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Type on Trezor").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Type on this phone").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Tap an NFC tag").assertDoesNotExist()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_nfcWaitingScreen() {
+    fun signingScreen_passphraseSheet_nfcMode_showsAffordance() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 SigningScreen(
@@ -399,37 +367,15 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Read from NFC tag").performClick()
+        composeTestRule.onNodeWithText("Tap an NFC tag").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
-        composeTestRule.onAllNodesWithText("Cancel").assertCountEquals(2)
+        composeTestRule.onNodeWithText(
+            "Tap Continue, then hold the NFC tag to the back of the phone.",
+        ).assertIsDisplayed()
     }
 
     @Test
-    fun signingScreen_passphraseDialog_nfcCancelReturnsToChoices() {
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                SigningScreen(
-                    message = "Signing...",
-                    log = "",
-                    passphraseRequest = TestFixtures.passphraseRequestOnDevice,
-                    accountPathRequest = null,
-                    nfcAvailable = true,
-                    onCancel = {},
-                )
-            }
-        }
-        composeTestRule.onNodeWithText("Read from NFC tag").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("nfc-waiting-cancel").performClick()
-        composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Enter on Trezor").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Read from NFC tag").assertIsDisplayed()
-    }
-
-    @Test
-    fun signingScreen_passphraseDialog_nfcErrorShown() {
+    fun signingScreen_passphraseSheet_nfcErrorShown() {
         var nfcTagResult by mutableStateOf<NfcReadResult?>(null)
 
         composeTestRule.setContent {
@@ -445,13 +391,12 @@ class ScreenRenderTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Read from NFC tag").performClick()
+        composeTestRule.onNodeWithText("Tap an NFC tag").performClick()
         composeTestRule.runOnIdle {
             nfcTagResult = NfcReadResult.Error("No text found on tag")
         }
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("No text found on tag").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Hold NFC tag to back of phone").assertIsDisplayed()
     }
 
     @Test
