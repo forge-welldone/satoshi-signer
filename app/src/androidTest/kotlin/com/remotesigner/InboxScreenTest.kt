@@ -1,15 +1,20 @@
 package com.remotesigner
 
-import androidx.compose.ui.test.*
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.remotesigner.data.InboxItemEntity
-import com.remotesigner.nostr.RelayStatus
-import com.remotesigner.ui.HomeScreen
+import com.remotesigner.data.InboxStatus
 import com.remotesigner.ui.InboxSection
 import com.remotesigner.ui.theme.SatoshiSignerTheme
 import org.junit.Rule
 import org.junit.Test
 
+/**
+ * Tests focused on the redesigned `InboxSection` (SIG-3).
+ * Home-level relay chip / hero copy / NFC-button tests live in [HomeScreenTest].
+ */
 class InboxScreenTest {
 
     @get:Rule
@@ -26,58 +31,56 @@ class InboxScreenTest {
                 )
             }
         }
-
-        composeTestRule.onNodeWithText("Payment to Alice").assertIsDisplayed()
-        composeTestRule.onNodeWithText("0.00500000 BTC").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Unsigned transaction").assertIsDisplayed()
-        composeTestRule.onNodeWithText("0.10000000 BTC").assertIsDisplayed()
+        // Amount is rendered as display + suffix; assert on the leading numeric portion.
+        composeTestRule.onNodeWithText("0.00500000").assertIsDisplayed()
+        composeTestRule.onNodeWithText("0.10000000").assertIsDisplayed()
+        // The Unsigned pill is uppercased by the Pill primitive.
+        composeTestRule.onNodeWithText("UNSIGNED").assertIsDisplayed()
     }
 
     @Test
-    fun inboxSection_emptyList_showsNothing() {
+    fun inboxSection_emptyList_showsEmptyCard() {
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(items = emptyList(), onSign = {}, onDelete = {})
+            }
+        }
+        composeTestRule.onNodeWithText("No incoming transactions yet.").assertIsDisplayed()
+    }
+
+    @Test
+    fun inboxItemCard_pendingStatus_showsReviewAndDismiss() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 InboxSection(
-                    items = emptyList(),
+                    items = listOf(TestFixtures.sampleInboxItems[0]),
                     onSign = {},
                     onDelete = {},
                 )
             }
         }
-
-        composeTestRule.onNodeWithText("Inbox").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Review →").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Dismiss").assertIsDisplayed()
     }
 
     @Test
-    fun inboxItemCard_pendingStatus_showsSignButton() {
-        val pendingItem = TestFixtures.sampleInboxItems[0] // PENDING
+    fun inboxItemCard_signedStatus_showsOpenAndDismiss() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
-                InboxSection(items = listOf(pendingItem), onSign = {}, onDelete = {})
+                InboxSection(
+                    items = listOf(TestFixtures.signedInboxItem),
+                    onSign = {},
+                    onDelete = {},
+                )
             }
         }
-
-        composeTestRule.onNodeWithText("Sign").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Delete").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Open →").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Dismiss").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review →").assertDoesNotExist()
     }
 
     @Test
-    fun inboxItemCard_signedStatus_hidesSignButton() {
-        val signedItem = TestFixtures.sampleInboxItems[0].copy(
-            status = com.remotesigner.data.InboxStatus.SIGNED
-        )
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                InboxSection(items = listOf(signedItem), onSign = {}, onDelete = {})
-            }
-        }
-
-        composeTestRule.onNodeWithText("Sign").assertDoesNotExist()
-        composeTestRule.onNodeWithText("Delete").assertIsDisplayed()
-    }
-
-    @Test
-    fun inboxItemCard_signButton_callsOnSign() {
+    fun inboxItemCard_review_callsOnSign() {
         var signedItem: InboxItemEntity? = null
         composeTestRule.setContent {
             SatoshiSignerTheme {
@@ -88,13 +91,45 @@ class InboxScreenTest {
                 )
             }
         }
-
-        composeTestRule.onNodeWithText("Sign").performClick()
-        assert(signedItem != null) { "onSign should have been called" }
+        composeTestRule.onNodeWithText("Review →").performClick()
+        assert(signedItem != null) { "Review should fire onSign" }
     }
 
     @Test
-    fun inboxItemCard_broadcastStatus_showsChipAndTxid() {
+    fun inboxItemCard_dismiss_callsOnDelete() {
+        var deleted: InboxItemEntity? = null
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(
+                    items = listOf(TestFixtures.sampleInboxItems[0]),
+                    onSign = {},
+                    onDelete = { deleted = it },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Dismiss").performClick()
+        assert(deleted != null) { "Dismiss should fire onDelete" }
+    }
+
+    @Test
+    fun inboxItemCard_open_callsOnItemTap() {
+        var tapped: InboxItemEntity? = null
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(
+                    items = listOf(TestFixtures.signedInboxItem),
+                    onSign = {},
+                    onDelete = {},
+                    onItemTap = { tapped = it },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Open →").performClick()
+        assert(tapped != null) { "Open should fire onItemTap" }
+    }
+
+    @Test
+    fun inboxItemCard_broadcastStatus_showsTxidAndPill() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 InboxSection(
@@ -104,14 +139,13 @@ class InboxScreenTest {
                 )
             }
         }
-
-        composeTestRule.onNodeWithText("broadcast").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Sign").assertDoesNotExist()
-        composeTestRule.onNodeWithText("txid: a1b2c3d4...e9f0a1b2").assertIsDisplayed()
+        composeTestRule.onNodeWithText("BROADCAST").assertIsDisplayed()
+        composeTestRule.onNodeWithText("txid: a1b2c3d4…e9f0a1b2", substring = true)
+            .assertIsDisplayed()
     }
 
     @Test
-    fun inboxItemCard_signedStatus_showsChip() {
+    fun inboxItemCard_signedStatus_showsSignedPill() {
         composeTestRule.setContent {
             SatoshiSignerTheme {
                 InboxSection(
@@ -121,97 +155,18 @@ class InboxScreenTest {
                 )
             }
         }
-
-        composeTestRule.onNodeWithText("signed").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Sign").assertDoesNotExist()
+        composeTestRule.onNodeWithText("SIGNED").assertIsDisplayed()
     }
 
     @Test
-    fun inboxItemCard_pendingStatus_showsChip() {
+    fun inboxItemCard_failedStatus_alsoShowsUnsignedPill() {
+        val failed = TestFixtures.sampleInboxItems[0].copy(status = InboxStatus.FAILED)
         composeTestRule.setContent {
             SatoshiSignerTheme {
-                InboxSection(
-                    items = listOf(TestFixtures.sampleInboxItems[0]),
-                    onSign = {},
-                    onDelete = {},
-                )
+                InboxSection(items = listOf(failed), onSign = {}, onDelete = {})
             }
         }
-
-        composeTestRule.onNodeWithText("pending").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Sign").assertIsDisplayed()
-    }
-
-    @Test
-    fun inboxItemCard_signedStatus_cardTappable() {
-        var tappedItem: InboxItemEntity? = null
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                InboxSection(
-                    items = listOf(TestFixtures.signedInboxItem),
-                    onSign = {},
-                    onDelete = {},
-                    onItemTap = { tappedItem = it },
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithText("Payment to Bob").performClick()
-        assert(tappedItem != null) { "onItemTap should have been called for signed item" }
-    }
-
-    @Test
-    fun homeScreen_relayStatus_showsConnectedCount() {
-        val relays = mapOf(
-            "wss://nos.lol" to RelayStatus.CONNECTED,
-            "wss://relay.damus.io" to RelayStatus.CONNECTED,
-            "wss://relay.primal.net" to RelayStatus.ERROR,
-        )
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                HomeScreen(
-                    npub = "npub1test",
-                    relayCount = 2,
-                    relayStatuses = relays,
-                    inboxItems = emptyList(),
-                    onPsbtSelected = {},
-                    onSignInboxItem = {},
-                    onDeleteInboxItem = {},
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithText("2 relays connected").assertIsDisplayed()
-    }
-
-    @Test
-    fun homeScreen_relayList_expandsOnTap() {
-        val relays = mapOf(
-            "wss://nos.lol" to RelayStatus.CONNECTED,
-            "wss://relay.damus.io" to RelayStatus.ERROR,
-        )
-        composeTestRule.setContent {
-            SatoshiSignerTheme {
-                HomeScreen(
-                    npub = "npub1test",
-                    relayCount = 1,
-                    relayStatuses = relays,
-                    inboxItems = emptyList(),
-                    onPsbtSelected = {},
-                    onSignInboxItem = {},
-                    onDeleteInboxItem = {},
-                )
-            }
-        }
-
-        // Relay details not visible initially
-        composeTestRule.onNodeWithText("nos.lol").assertDoesNotExist()
-
-        // Tap the relay status to expand
-        composeTestRule.onNodeWithText("1 relay connected").performClick()
-
-        // Now relay details are visible
-        composeTestRule.onNodeWithText("nos.lol").assertIsDisplayed()
-        composeTestRule.onNodeWithText("relay.damus.io").assertIsDisplayed()
+        composeTestRule.onNodeWithText("UNSIGNED").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review →").assertIsDisplayed()
     }
 }

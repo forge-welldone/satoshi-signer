@@ -71,6 +71,8 @@ fun AppRoot(
             onItemTap = { item -> viewModel.openInboxResult(item) },
             onContacts = { viewModel.showContacts() },
             onEncryptPassphrase = { viewModel.showEncryptPassphrase() },
+            contactsCount = contacts.size,
+            nfcAvailable = nfcAvailable,
         )
         is AppState.TransactionReview -> TransactionReviewScreen(
             state = s,

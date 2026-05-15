@@ -46,6 +46,6 @@ class AppLaunchTest {
                 )
             }
         }
-        composeTestRule.onNodeWithText("Open PSBT File").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Open PSBT file").assertIsDisplayed()
     }
 }
