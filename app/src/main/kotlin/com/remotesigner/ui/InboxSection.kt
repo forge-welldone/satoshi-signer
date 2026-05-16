@@ -22,18 +22,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.remotesigner.data.InboxItemEntity
 import com.remotesigner.data.InboxStatus
 import com.remotesigner.ui.components.Addr
 import com.remotesigner.ui.components.Pill
 import com.remotesigner.ui.components.PillTone
+import com.remotesigner.ui.components.Spinner
 import com.remotesigner.ui.theme.LocalVaultColors
 import com.remotesigner.ui.theme.LocalVaultShapes
 import com.remotesigner.ui.theme.LocalVaultTypography
@@ -79,7 +84,7 @@ private fun InboxEmptyCard() {
 
 private fun Modifier.dashedBorder(
     color: androidx.compose.ui.graphics.Color,
-    shape: androidx.compose.foundation.shape.CornerBasedShape,
+    shape: RoundedCornerShape,
     strokeWidth: androidx.compose.ui.unit.Dp = 1.dp,
     dashLength: androidx.compose.ui.unit.Dp = 6.dp,
     gapLength: androidx.compose.ui.unit.Dp = 4.dp,
@@ -87,13 +92,11 @@ private fun Modifier.dashedBorder(
     val strokePx = strokeWidth.toPx()
     val dashPx = dashLength.toPx()
     val gapPx = gapLength.toPx()
-    val cornerPx = (shape as? RoundedCornerShape)
-        ?.let { runCatching { it.topStart.toPx(Size(size.width, size.height), this) }.getOrDefault(0f) }
-        ?: 0f
+    val cornerPx = shape.topStart.toPx(Size(size.width, size.height), this)
     drawRoundRect(
         color = color,
         size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerPx, cornerPx),
+        cornerRadius = CornerRadius(cornerPx, cornerPx),
         style = Stroke(
             width = strokePx,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashPx, gapPx), 0f),
@@ -138,10 +141,7 @@ fun InboxItemCard(
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             text = amount,
-                            style = typography.display.copy(
-                                color = colors.text,
-                                fontSize = androidx.compose.ui.unit.TextUnit(22f, androidx.compose.ui.unit.TextUnitType.Sp),
-                            ),
+                            style = typography.display.copy(color = colors.text, fontSize = 22.sp),
                         )
                         if (suffix.isNotEmpty()) {
                             Spacer(modifier = Modifier.width(6.dp))
@@ -163,7 +163,8 @@ fun InboxItemCard(
                     text = "txid: ${item.txid.take(8)}…${item.txid.takeLast(8)}",
                     style = typography.monoSmall.copy(color = colors.accent),
                     modifier = Modifier
-                        .clickable {
+                        .semantics { contentDescription = "Open transaction on mempool.space" }
+                        .clickable(role = Role.Button) {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(txUrl)))
                         },
                 )
@@ -182,9 +183,6 @@ private fun InboxFooter(
     onItemTap: (InboxItemEntity) -> Unit,
 ) {
     val colors = LocalVaultColors.current
-    val typography = LocalVaultTypography.current
-    val isActionable = item.status in listOf(InboxStatus.PENDING, InboxStatus.FAILED, InboxStatus.SIGNING)
-    val isReopenable = item.status == InboxStatus.SIGNED || item.status == InboxStatus.BROADCAST
 
     Row(
         modifier = Modifier
@@ -192,8 +190,8 @@ private fun InboxFooter(
             .border(1.dp, colors.line, RoundedCornerShape(0.dp))
             .height(44.dp),
     ) {
-        when {
-            isActionable -> {
+        when (item.status) {
+            InboxStatus.PENDING, InboxStatus.FAILED -> {
                 FooterButton(
                     text = "Review →",
                     color = colors.accent,
@@ -208,7 +206,15 @@ private fun InboxFooter(
                     modifier = Modifier.weight(1f),
                 )
             }
-            isReopenable -> {
+            InboxStatus.SIGNING -> {
+                FooterStatus(
+                    text = "Signing…",
+                    color = colors.accent,
+                    showSpinner = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            InboxStatus.SIGNED, InboxStatus.BROADCAST -> {
                 FooterButton(
                     text = "Open →",
                     color = colors.accent,
@@ -223,7 +229,7 @@ private fun InboxFooter(
                     modifier = Modifier.weight(1f),
                 )
             }
-            else -> {
+            InboxStatus.DELETED -> {
                 FooterButton(
                     text = "Dismiss",
                     color = colors.textDim,
@@ -232,6 +238,30 @@ private fun InboxFooter(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FooterStatus(
+    text: String,
+    color: androidx.compose.ui.graphics.Color,
+    showSpinner: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val typography = LocalVaultTypography.current
+    Row(
+        modifier = modifier.fillMaxWidth().height(44.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (showSpinner) {
+            Spinner(size = 14.dp, color = color)
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Text(
+            text = text,
+            style = typography.bodyDim.copy(color = color),
+        )
     }
 }
 

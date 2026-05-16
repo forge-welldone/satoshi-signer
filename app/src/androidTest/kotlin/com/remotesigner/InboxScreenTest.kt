@@ -8,6 +8,7 @@ import com.remotesigner.data.InboxItemEntity
 import com.remotesigner.data.InboxStatus
 import com.remotesigner.ui.InboxSection
 import com.remotesigner.ui.theme.SatoshiSignerTheme
+import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 
@@ -92,7 +93,7 @@ class InboxScreenTest {
             }
         }
         composeTestRule.onNodeWithText("Review →").performClick()
-        assert(signedItem != null) { "Review should fire onSign" }
+        assertNotNull("Review should fire onSign", signedItem)
     }
 
     @Test
@@ -108,7 +109,7 @@ class InboxScreenTest {
             }
         }
         composeTestRule.onNodeWithText("Dismiss").performClick()
-        assert(deleted != null) { "Dismiss should fire onDelete" }
+        assertNotNull("Dismiss should fire onDelete", deleted)
     }
 
     @Test
@@ -125,7 +126,7 @@ class InboxScreenTest {
             }
         }
         composeTestRule.onNodeWithText("Open →").performClick()
-        assert(tapped != null) { "Open should fire onItemTap" }
+        assertNotNull("Open should fire onItemTap", tapped)
     }
 
     @Test

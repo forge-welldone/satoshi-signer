@@ -1,7 +1,9 @@
 package com.remotesigner.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -13,11 +15,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -37,9 +42,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.remotesigner.data.InboxItemEntity
@@ -55,7 +63,7 @@ import com.remotesigner.ui.theme.LocalVaultColors
 import com.remotesigner.ui.theme.LocalVaultShapes
 import com.remotesigner.ui.theme.LocalVaultTypography
 
-private const val SIGNER_KEY_NPUB_HEAD = 4
+private const val SIGNER_KEY_NPUB_HEAD = 5
 private const val SIGNER_KEY_NPUB_TAIL = 5
 
 @Composable
@@ -93,13 +101,17 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.bg)
+            .windowInsetsPadding(WindowInsets.systemBars)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
         BrandHeader(relayCount = relayCount, relayStatuses = relayStatuses)
         Spacer(modifier = Modifier.height(20.dp))
 
-        HomeHero(inboxHasItems = visibleInbox.isNotEmpty(), pendingCount = pendingCount)
+        HomeHero(
+            visibleCount = visibleInbox.size,
+            pendingCount = pendingCount,
+        )
         Spacer(modifier = Modifier.height(18.dp))
 
         CtaGrid(
@@ -193,10 +205,33 @@ private fun GlowingDot(color: Color, size: Dp = 6.dp) {
 }
 
 @Composable
-private fun HomeHero(inboxHasItems: Boolean, pendingCount: Int) {
+private fun HomeHero(visibleCount: Int, pendingCount: Int) {
     val colors = LocalVaultColors.current
     val typography = LocalVaultTypography.current
     val shapes = LocalVaultShapes.current
+    val (eyebrow, title, sub) = when {
+        pendingCount > 0 -> {
+            val plural = if (pendingCount == 1) "transaction" else "transactions"
+            Triple(
+                "Ready to sign",
+                "$pendingCount $plural waiting for your signature.",
+                "Review the outputs, plug in your Trezor, and sign offline.",
+            )
+        }
+        visibleCount > 0 -> {
+            val plural = if (visibleCount == 1) "transaction" else "transactions"
+            Triple(
+                "All caught up",
+                "$visibleCount signed $plural in the inbox.",
+                "Open one to broadcast or share, or dismiss it.",
+            )
+        }
+        else -> Triple(
+            "Standing by",
+            "Waiting for a transaction to sign.",
+            "Open a PSBT file, or send one from Electrum to this phone over Nostr.",
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -204,39 +239,17 @@ private fun HomeHero(inboxHasItems: Boolean, pendingCount: Int) {
             .background(colors.surface)
             .padding(horizontal = 18.dp, vertical = 18.dp),
     ) {
-        if (inboxHasItems) {
-            Eyebrow("Ready to sign")
-            Spacer(modifier = Modifier.height(6.dp))
-            val count = if (pendingCount > 0) pendingCount else 1
-            val plural = if (count == 1) "transaction" else "transactions"
-            Text(
-                text = "$count $plural waiting for your signature.",
-                style = typography.display.copy(
-                    color = colors.text,
-                    fontSize = androidx.compose.ui.unit.TextUnit(24f, androidx.compose.ui.unit.TextUnitType.Sp),
-                ),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Review the outputs, plug in your Trezor, and sign offline.",
-                style = typography.bodyDim.copy(color = colors.textDim),
-            )
-        } else {
-            Eyebrow("Standing by")
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Waiting for a transaction to sign.",
-                style = typography.display.copy(
-                    color = colors.text,
-                    fontSize = androidx.compose.ui.unit.TextUnit(24f, androidx.compose.ui.unit.TextUnitType.Sp),
-                ),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Open a PSBT file, or send one from Electrum to this phone over Nostr.",
-                style = typography.bodyDim.copy(color = colors.textDim),
-            )
-        }
+        Eyebrow(eyebrow)
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = title,
+            style = typography.display.copy(color = colors.text, fontSize = 24.sp),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = sub,
+            style = typography.bodyDim.copy(color = colors.textDim),
+        )
     }
 }
 
@@ -325,7 +338,10 @@ private fun SignerKeyExpandable(npub: String) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(role = androidx.compose.ui.semantics.Role.Button) { expanded = !expanded }
+                .semantics {
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
+                .clickable(role = Role.Button) { expanded = !expanded }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -359,7 +375,12 @@ private fun SignerKeyExpandable(npub: String) {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_TEXT, npub)
                     }
-                    context.startActivity(Intent.createChooser(send, "Share signer key"))
+                    try {
+                        context.startActivity(Intent.createChooser(send, "Share signer key"))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(context, "No app available to share", Toast.LENGTH_SHORT)
+                            .show()
+                    }
                 },
             )
         }

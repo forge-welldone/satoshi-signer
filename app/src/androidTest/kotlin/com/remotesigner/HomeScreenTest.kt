@@ -10,12 +10,15 @@ import com.remotesigner.data.InboxStatus
 import com.remotesigner.nostr.RelayStatus
 import com.remotesigner.ui.HomeScreen
 import com.remotesigner.ui.theme.SatoshiSignerTheme
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 
 /**
  * Covers the SIG-3 acceptance matrix: relay × {connected, connecting,
- * disconnected} × inbox × {empty, item} × NFC × {available, unavailable}.
+ * disconnected} × inbox × {empty, pending, signed-only, mixed, all-deleted}
+ * × NFC × {available, unavailable}.
  *
  * Compose instrumented test — runs under `connectedDebugAndroidTest`,
  * outside the meta-repo's dockerized JVM test runner.
@@ -90,11 +93,15 @@ class HomeScreenTest {
     }
 
     @Test
-    fun hero_onlySignedItem_treatsAsReadyButCountFallsBackToOne() {
+    fun hero_onlySignedItem_showsAllCaughtUp_notLying() {
+        // Regression: previously claimed "1 transaction waiting" when the only
+        // item was already signed (flagged in adversarial review).
         renderHome(inboxItems = listOf(TestFixtures.signedInboxItem))
-        composeTestRule.onNodeWithText("READY TO SIGN").assertIsDisplayed()
-        composeTestRule.onNodeWithText("1 transaction waiting for your signature.")
+        composeTestRule.onNodeWithText("ALL CAUGHT UP").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1 signed transaction in the inbox.")
             .assertIsDisplayed()
+        composeTestRule.onNodeWithText("waiting for your signature.", substring = true)
+            .assertDoesNotExist()
     }
 
     @Test
@@ -171,7 +178,7 @@ class HomeScreenTest {
         var clicked = 0
         renderHome(contactsCount = 2, onContacts = { clicked++ })
         composeTestRule.onNodeWithText("Contacts · 2").performClick()
-        assert(clicked == 1)
+        assertEquals(1, clicked)
     }
 
     @Test
@@ -179,14 +186,14 @@ class HomeScreenTest {
         var clicked = 0
         renderHome(nfcAvailable = true, onEncryptPassphrase = { clicked++ })
         composeTestRule.onNodeWithText("NFC passphrase").performClick()
-        assert(clicked == 1)
+        assertEquals(1, clicked)
     }
 
     @Test
-    fun signerKey_collapsed_hidesFullNpubAndShowsTruncated() {
+    fun signerKey_collapsed_showsTruncatedNpub_andHidesDetails() {
         renderHome()
         composeTestRule.onNodeWithText("Your signer key").assertIsDisplayed()
-        // Collapsed shows the truncated form via Addr (head=4, tail=5 -> "npub1…jug6f")
+        // head=5, tail=5 → `npub1…jug6f` (matches the prototype).
         composeTestRule.onNodeWithText("npub1…jug6f").assertIsDisplayed()
         composeTestRule.onNodeWithText("Copy").assertDoesNotExist()
         composeTestRule.onNodeWithText("Share").assertDoesNotExist()
@@ -210,7 +217,7 @@ class HomeScreenTest {
             onSign = { signed = it },
         )
         composeTestRule.onNodeWithText("Review →").performClick()
-        assert(signed != null) { "Review should call onSign" }
+        assertNotNull("Review should call onSign", signed)
     }
 
     @Test
@@ -221,7 +228,7 @@ class HomeScreenTest {
             onDelete = { deleted = it },
         )
         composeTestRule.onNodeWithText("Dismiss").performClick()
-        assert(deleted != null) { "Dismiss should call onDelete" }
+        assertNotNull("Dismiss should call onDelete", deleted)
     }
 
     @Test
@@ -232,7 +239,19 @@ class HomeScreenTest {
             onItemTap = { tapped = it },
         )
         composeTestRule.onNodeWithText("Open →").performClick()
-        assert(tapped != null) { "Open should call onItemTap" }
+        assertNotNull("Open should call onItemTap", tapped)
+    }
+
+    @Test
+    fun inboxItem_signing_showsSigningFooter_andDoesNotFireOnSign() {
+        // Regression: previously the SIGNING status showed "Review →" and
+        // fired onSign, letting users double-tap an in-flight signing flow.
+        var signed: InboxItemEntity? = null
+        val signing = TestFixtures.sampleInboxItems[0].copy(status = InboxStatus.SIGNING)
+        renderHome(inboxItems = listOf(signing), onSign = { signed = it })
+        composeTestRule.onNodeWithText("Signing…").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Review →").assertDoesNotExist()
+        assertEquals("onSign must not have been called", null, signed)
     }
 
     @Test
