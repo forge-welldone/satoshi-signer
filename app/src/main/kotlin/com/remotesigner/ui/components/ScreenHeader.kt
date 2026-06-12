@@ -9,12 +9,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.remotesigner.ui.icons.AppIcons
@@ -55,20 +55,29 @@ fun ScreenHeader(
 private fun BackButton(onClick: () -> Unit) {
     val colors = LocalVaultColors.current
     val shapes = LocalVaultShapes.current
-    val painter = rememberVectorPainter(image = AppIcons.ChevronLeft)
+    // 48dp interactive area (accessibility minimum touch target) around the
+    // 36dp visual; plain foundation clickable gets no Material minimum-size
+    // enforcement, so the touch target must be sized explicitly.
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(48.dp)
             .clip(shapes.small)
-            .border(1.dp, colors.line, shapes.small)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.foundation.Image(
-            painter = painter,
-            contentDescription = "Back",
-            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(colors.text),
-            modifier = Modifier.size(16.dp),
-        )
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(shapes.small)
+                .border(1.dp, colors.line, shapes.small),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = AppIcons.ChevronLeft,
+                contentDescription = "Back",
+                tint = colors.text,
+                modifier = Modifier.size(16.dp),
+            )
+        }
     }
 }

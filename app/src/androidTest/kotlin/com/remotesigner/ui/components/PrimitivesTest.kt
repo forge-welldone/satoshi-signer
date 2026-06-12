@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -72,17 +71,17 @@ class PrimitivesTest(private val darkTheme: Boolean) {
     }
 
     @Test
-    fun appButton_disabled_exposesNoClickAction() {
-        // Compose's `clickable(enabled = false)` strips the OnClick semantics
-        // action, so calling performClick() on the disabled node would fail
-        // the test outright. Verify the disabled state instead.
+    fun appButton_disabled_isNotEnabled() {
+        // Foundation 1.7's clickable adds the OnClick semantics action even
+        // when disabled (only the Disabled flag is gated on `enabled`), so
+        // asserting the absence of a click action would fail. The disabled
+        // flag is the reliable contract.
         setThemedContent {
             AppButton(text = "Disabled", onClick = {}, enabled = false)
         }
         composeTestRule.onNodeWithText("Disabled")
             .assertIsDisplayed()
             .assertIsNotEnabled()
-            .assertHasNoClickAction()
     }
 
     @Test
@@ -131,7 +130,7 @@ class PrimitivesTest(private val darkTheme: Boolean) {
         setThemedContent {
             Addr(value = "bc1qmek5jz2m9l4k6s7yqfdjl2mxv3lqmlv6", head = 6, tail = 6)
         }
-        composeTestRule.onNodeWithText("bc1qme…qmlv6", substring = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("bc1qme…lqmlv6", substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -168,6 +167,29 @@ class PrimitivesTest(private val darkTheme: Boolean) {
         composeTestRule.onNodeWithTag(BOTTOM_SHEET_SCRIM_TAG).performClick()
         composeTestRule.waitForIdle()
         assertEquals(1, dismissed)
+    }
+
+    @Test
+    fun bottomSheet_tapOnSheetBody_doesNotDismiss() {
+        // Regression: the sheet container must consume taps — without it,
+        // taps inside the sheet fall through to the scrim and dismiss.
+        var dismissed = 0
+        setThemedContent {
+            Box(Modifier.fillMaxSize()) {
+                BottomSheetOverlay(
+                    visible = true,
+                    onDismiss = { dismissed++ },
+                ) {
+                    androidx.compose.material3.Text(
+                        "Sheet body",
+                        modifier = Modifier.testTag("body"),
+                    )
+                }
+            }
+        }
+        composeTestRule.onNodeWithTag("body").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(0, dismissed)
     }
 
     @Test

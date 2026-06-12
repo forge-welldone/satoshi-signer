@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,7 @@ fun AppButton(
     val height = if (small) 40.dp else 52.dp
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val isFocused by interactionSource.collectIsFocusedAsState()
     val scale by animateFloatAsState(if (isPressed && enabled) 0.98f else 1f, label = "btnScale")
 
     val (bg, fg, border) = when (variant) {
@@ -57,6 +59,10 @@ fun AppButton(
         AppButtonVariant.Ghost -> Triple(Color.Transparent, colors.text, null)
         AppButtonVariant.Danger -> Triple(Color.Transparent, colors.bad, BorderStroke(1.dp, colors.bad))
     }
+    // `indication = null` suppresses the ripple, so keyboard/D-pad focus needs
+    // its own visual cue: a text-tinted border readable on every variant bg.
+    val effectiveBorder =
+        if (isFocused) BorderStroke(2.dp, colors.text.copy(alpha = 0.6f)) else border
 
     Box(
         modifier = modifier
@@ -65,7 +71,7 @@ fun AppButton(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .alpha(if (enabled) 1f else 0.45f)
             .clip(shapes.pill)
-            .let { if (border != null) it.border(border, shapes.pill) else it }
+            .let { if (effectiveBorder != null) it.border(effectiveBorder, shapes.pill) else it }
             .background(bg)
             .clickable(
                 interactionSource = interactionSource,

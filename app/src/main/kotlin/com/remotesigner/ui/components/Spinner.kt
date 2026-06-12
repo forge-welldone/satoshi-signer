@@ -2,6 +2,7 @@ package com.remotesigner.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -26,7 +27,9 @@ fun Spinner(
     val rotation by rememberSsSpin()
     val tint = color ?: colors.accent
     val stroke = strokeWidth
-    Canvas(modifier = modifier.size(size)) {
+    // progressSemantics exposes an indeterminate ProgressBarRangeInfo so
+    // TalkBack announces the busy state (parity with CircularProgressIndicator).
+    Canvas(modifier = modifier.size(size).progressSemantics()) {
         rotate(degrees = rotation) {
             val pad = stroke.toPx()
             val rect = Size(this.size.width - pad * 2, this.size.height - pad * 2)
