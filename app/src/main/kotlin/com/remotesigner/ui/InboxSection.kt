@@ -1,7 +1,9 @@
 package com.remotesigner.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -165,7 +167,15 @@ fun InboxItemCard(
                     modifier = Modifier
                         .semantics { contentDescription = "Open transaction on mempool.space" }
                         .clickable(role = Role.Button) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(txUrl)))
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(txUrl)))
+                            } catch (_: ActivityNotFoundException) {
+                                Toast.makeText(
+                                    context,
+                                    "No app available to open link",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         },
                 )
             }

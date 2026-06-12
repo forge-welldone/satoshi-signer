@@ -398,7 +398,7 @@ private fun SignerKeyDetails(npub: String, onCopy: () -> Unit, onShare: () -> Un
             text = npub,
             style = typography.mono.copy(
                 color = colors.textDim,
-                fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp),
+                fontSize = 11.sp,
             ),
         )
         Spacer(modifier = Modifier.height(12.dp))
