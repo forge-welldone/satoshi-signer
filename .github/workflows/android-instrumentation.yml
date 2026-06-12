@@ -2,6 +2,8 @@ name: Android instrumentation tests
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["ci/SIG-3-instrumentation-run"]
 
 jobs:
   connected-tests:
