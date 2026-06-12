@@ -133,6 +133,20 @@ class InboxScreenTest {
     }
 
     @Test
+    fun inboxItemCard_blankAmount_fallsBackToLabel() {
+        // Regression (Copilot review): amount stays "" when PSBT parsing
+        // fails — the card must fall back to the label instead of rendering
+        // an empty headline.
+        val unparsed = TestFixtures.sampleInboxItems[0].copy(amount = "")
+        composeTestRule.setContent {
+            SatoshiSignerTheme {
+                InboxSection(items = listOf(unparsed), onSign = {}, onDelete = {})
+            }
+        }
+        composeTestRule.onNodeWithText("Payment to Alice").assertIsDisplayed()
+    }
+
+    @Test
     fun inboxItemCard_broadcastStatus_showsTxidAndPill() {
         composeTestRule.setContent {
             SatoshiSignerTheme {

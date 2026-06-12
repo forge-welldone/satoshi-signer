@@ -195,7 +195,8 @@ private fun RelayChip(state: RelayChipState, relayCount: Int) {
 
 @Composable
 private fun GlowingDot(color: Color, size: Dp = 6.dp) {
-    Canvas(modifier = Modifier.size(size * 2)) {
+    // Canvas must fit the outer glow (coreRadius * 2.2 = 1.1 * size per side).
+    Canvas(modifier = Modifier.size(size * 2.2f)) {
         val center = Offset(this.size.width / 2f, this.size.height / 2f)
         val coreRadius = size.toPx() / 2f
         drawCircle(color = color.copy(alpha = 0.18f), radius = coreRadius * 2.2f, center = center)

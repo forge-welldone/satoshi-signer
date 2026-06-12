@@ -142,7 +142,9 @@ fun InboxItemCard(
                     val (amount, suffix) = splitAmountAndUnit(item.amount)
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            text = amount,
+                            // amount stays "" when PSBT parsing fails; the label
+                            // is always non-empty ("Unsigned transaction" default).
+                            text = amount.ifEmpty { item.label },
                             style = typography.display.copy(color = colors.text, fontSize = 22.sp),
                         )
                         if (suffix.isNotEmpty()) {
@@ -194,10 +196,28 @@ private fun InboxFooter(
 ) {
     val colors = LocalVaultColors.current
 
+    Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(colors.line),
+        )
+        InboxFooterActions(item = item, onSign = onSign, onDelete = onDelete, onItemTap = onItemTap)
+    }
+}
+
+@Composable
+private fun InboxFooterActions(
+    item: InboxItemEntity,
+    onSign: (InboxItemEntity) -> Unit,
+    onDelete: (InboxItemEntity) -> Unit,
+    onItemTap: (InboxItemEntity) -> Unit,
+) {
+    val colors = LocalVaultColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, colors.line, RoundedCornerShape(0.dp))
             .height(44.dp),
     ) {
         when (item.status) {
