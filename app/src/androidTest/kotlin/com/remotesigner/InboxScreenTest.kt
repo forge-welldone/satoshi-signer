@@ -1,7 +1,9 @@
 package com.remotesigner
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.remotesigner.data.InboxItemEntity
@@ -35,8 +37,9 @@ class InboxScreenTest {
         // Amount is rendered as display + suffix; assert on the leading numeric portion.
         composeTestRule.onNodeWithText("0.00500000").assertIsDisplayed()
         composeTestRule.onNodeWithText("0.10000000").assertIsDisplayed()
-        // The Unsigned pill is uppercased by the Pill primitive.
-        composeTestRule.onNodeWithText("UNSIGNED").assertIsDisplayed()
+        // The Unsigned pill is uppercased by the Pill primitive. Both fixtures
+        // (PENDING + FAILED) render one, so assert the count rather than uniqueness.
+        composeTestRule.onAllNodesWithText("UNSIGNED").assertCountEquals(2)
     }
 
     @Test
